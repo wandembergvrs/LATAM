@@ -16,6 +16,11 @@
     h1{ font-size: clamp(1.15rem, 1vw + .9rem, 1.6rem); margin:0 0 12px; font-weight:700; letter-spacing:.2px }
     p.lead{ color:var(--muted); margin:.25rem 0 1rem; }
 
+    .notice{ background:#0b1329; border:1px solid var(--line); border-left:4px solid var(--accent); border-radius:12px; padding:14px 16px; color:#c9d6ff; margin: 12px 0 18px; }
+    .notice b{ color:#e8eefc }
+    .notice ol{ margin:.4rem 0 0 1rem; padding:0 }
+    .notice li{ margin:.25rem 0 }
+
     .grid{ display:grid; gap:16px; grid-template-columns: 1fr; }
     @media (min-width: 980px){ .grid{ grid-template-columns: 1fr 1fr 1fr; } }
 
@@ -33,8 +38,8 @@
     .result-code{ margin-top:8px; padding:10px 12px; background:#0b1329; border:1px solid var(--line); border-radius:10px; word-break:break-all; color:#c9d6ff; white-space:pre-wrap }
 
     .msg{ margin-top:10px; font-size:.9rem }
-    .msg.ok{ color: var(--Ok, var(--ok)) }
-    .msg.err{ color: var(--Err, var(--err)) }
+    .msg.ok{ color: var(--ok) }
+    .msg.err{ color: var(--err) }
 
     .countdown{ font-variant-numeric: tabular-nums; font-weight:600 }
     small.hint{ color: var(--muted); display:block; margin-top:6px }
@@ -60,7 +65,23 @@
   <div class="wrap">
     <div class="card">
       <h1>Busca de voos LATAM — múltiplos destinos (15s entre cada)</h1>
-      <p class="lead">Selecione <strong>origem</strong>, <strong>destino(s)</strong> (códigos IATA) e a <strong>data</strong>. O autosuggest usa a base global (CDN) com fallback offline. <em>Importante:</em> autorize pop-ups para abrir várias abas.</p>
+      <p class="lead">Selecione <strong>origem</strong>, <strong>destino(s)</strong> (códigos IATA) e a <strong>data</strong>. O autosuggest usa a base global (CDN) com fallback offline.</p>
+
+      <div class="notice" role="note" aria-label="Como funciona">
+        <b>Como funciona & pré-requisitos</b>
+        <ol>
+          <li><b>Faça login</b> na LATAM em outra aba antes de usar (obrigatório).</li>
+          <li>Autorize <b>pop-ups</b> para este site.</li>
+          <li>Ao clicar em <b>Buscar</b>, abrimos <i>abas de espera</i> (about:blank) para cada destino:
+            <ul>
+              <li>A <b>1ª aba</b> navega para a LATAM imediatamente.</li>
+              <li>As demais <b>auto-navegam a cada 15s</b> (0s, 15s, 30s, ...), mesmo que você troque de aba, pois o timer roda dentro de cada aba (meta-refresh).</li>
+              <li>O botão <b>Parar fila</b> fecha as abas ainda em espera.</li>
+            </ul>
+          </li>
+          <li>Você pode <b>colar uma lista</b> de IATAs (vírgula, espaço ou quebra de linha).</li>
+        </ol>
+      </div>
 
       <div class="grid">
         <div>
@@ -121,11 +142,12 @@
       window.__LATAM_WIDGET_INIT__ = true;
 
       // ====== CONFIG ======
-      const COOLDOWN_SECONDS = 15;
+      const COOLDOWN_SECONDS = 15;   // <<-- intervalo atualizado
       const LATAM_BASE = 'https://www.latamairlines.com/br/pt/oferta-voos';
-      const SUGGEST_ONLY_BR = false; // <- mude para true se quiser sugerir apenas Brasil
+      const SUGGEST_ONLY_BR = false; // coloque true para sugerir somente BR
+      const USE_EXP_ID = true;       // pode manter; apenas removemos o aviso textual
 
-      // (mantido) lista offline de BR para fallback visual
+      // Fallback offline mínimo (BR)
       const BR_IATA = ['AJU','AQA','ARU','ATM','AUX','BAU','BEL','BPS','BVH','BVB','BYO','CAC','CGB','CGH','CGR','CKS','CNF','CMG','CWB','CXJ','DOU','ERE','ERI','FEN','FLN','FOR','FRC','GEL','GIG','GJL','GNV','GPB','GRU','GUR','GYN','IGU','IMP','IOS','IPN','ITA','IZA','JDO','JPA','JOI','JPR','JTC','JDF','LDB','MAB','MAO','MCP','MCZ','MEA','MOC','MVS','MVD','NAT','NVT','OAL','OPS','PAV','PHB','PMW','POA','PPB','PVH','RAO','RBR','REC','RIA','RIG','ROO','SDU','SJK','SJP','SLZ','SSA','STM','TBT','TFF','THE','TJL','UBA','UDI','UNA','VAG','VCP','VDC','VIX'];
 
       const FALLBACK_BR = [
@@ -165,7 +187,6 @@
       }
 
       function upcaseIATA(inp){ inp.addEventListener('input', ()=>{ inp.value = inp.value.replace(/[^a-zA-Z]/g,'').toUpperCase().slice(0,3); }); }
-
       function fillDatalist(list){
         const dl = $('#airportsBR');
         dl.innerHTML = list.map(a => `<option value="${a.iata}">${a.iata} — ${a.city||''} (${a.name||''})</option>`).join('');
@@ -179,23 +200,19 @@
           const url = 'https://cdn.jsdelivr.net/gh/mwgg/Airports/airports.json';
           const res = await fetch(url, { signal: ctrl.signal, cache: 'force-cache' });
           if(!res.ok) throw new Error('HTTP '+res.status);
-          const data = await res.json(); // objeto { ICAO: {iata, name, city, country, ...}, ... }
+          const data = await res.json();
           const all = Object.values(data)
             .filter(a => a && a.iata && /^[A-Z]{3}$/.test(a.iata))
             .map(a => ({ iata:a.iata.toUpperCase(), city:a.city||'', name:a.name||'', country:a.country||'' }));
           const filtered = SUGGEST_ONLY_BR ? all.filter(a => isBR(a.country)) : all;
-          // Ordena: IATA, depois City (evita jitter no dropdown)
           filtered.sort((x,y)=> x.iata.localeCompare(y.iata) || (x.city||'').localeCompare(y.city||''));
           return filtered;
-        } finally {
-          clearTimeout(timer);
-        }
+        } finally { clearTimeout(timer); }
       }
 
       async function loadAirportsWithFallback(){
-        // Primeiro mostra algo útil imediatamente (fallback visual), depois tenta CDN.
         fillDatalist(FALLBACK_BR);
-        let attachList = BR_IATA.slice(); // dropdown mínimo para já funcionar
+        let attachList = BR_IATA.slice();
         attachDropdown($('#origin'), $('#drop-origin'), attachList);
         attachDropdown($('#destination'), $('#drop-dest'), attachList);
 
@@ -204,12 +221,10 @@
           const list = await fetchIATAsFromCDN(5000);
           fillDatalist(list);
           const listaIATA = list.map(a => a.iata);
-          // Reanexa dropdowns com a lista completa
           attachDropdown($('#origin'), $('#drop-origin'), listaIATA);
           attachDropdown($('#destination'), $('#drop-dest'), listaIATA);
           $('#status').className='msg ok'; $('#status').textContent='Lista IATA carregada (CDN).';
         } catch(e){
-          // Mantém o fallback offline
           $('#status').className='msg err'; $('#status').textContent='CDN indisponível — usando lista offline (BR).';
         }
       }
@@ -241,13 +256,13 @@
         }
       }
 
+      // ====== Validação ======
       function isTodayOrFuture(ymd){
         const {y,m,d} = parseYMD(ymd);
         const sel = new Date(y, m-1, d, 0, 0, 0, 0);
         const today = new Date(); today.setHours(0,0,0,0);
         return sel >= today;
       }
-
       function validate(origin, destination, date){
         if(!/^[A-Z]{3}$/.test(origin)) return { ok:false, msg:'Origem inválida. Use código IATA (3 letras).' };
         if(!/^[A-Z]{3}$/.test(destination)) return { ok:false, msg:'Destino inválido. Use código IATA (3 letras).' };
@@ -262,15 +277,16 @@
       function buildLatamURL({ origin, destination, date }){
         const { y, m, d } = parseYMD(date);
         const outboundISO = new Date(Date.UTC(y, m-1, d, 15, 0, 0)).toISOString();
-        const qp = new URLSearchParams({
+        const params = {
           origin: origin.toUpperCase(),
           outbound: outboundISO,
           destination: destination.toUpperCase(),
           adt:'1', chd:'0', inf:'0',
           trip:'OW', cabin:'Economy',
-          redemption:'true', sort:'RECOMMENDED',
-          exp_id: uuidv4()
-        });
+          redemption:'true', sort:'RECOMMENDED'
+        };
+        if (USE_EXP_ID) params.exp_id = uuidv4();
+        const qp = new URLSearchParams(params);
         return `${LATAM_BASE}?${qp.toString()}`;
       }
 
@@ -280,80 +296,83 @@
       function addDestination(code){
         const c = normalizeIATA(code);
         if(!c){ $('#status').className='msg err'; $('#status').textContent='Informe um destino IATA (3 letras).'; return {ok:false}; }
-        dests.add(c);
-        renderDestChips();
-        $('#destination').value='';
-        $('#status').textContent='';
-        return {ok:true};
+        dests.add(c); renderDestChips(); $('#destination').value=''; $('#status').textContent=''; return {ok:true};
       }
       const removeDestination = (code)=>{ dests.delete(code); renderDestChips(); };
       const clearDestinations = ()=>{ dests.clear(); renderDestChips(); };
 
       function renderDestChips(){
         const box = $('#destChips'); if(!box) return;
-        if(dests.size===0){
-          box.innerHTML = '<span class="hint">(Nenhum destino adicionado)</span>';
-          return;
-        }
+        if(dests.size===0){ box.innerHTML = '<span class="hint">(Nenhum destino adicionado)</span>'; return; }
         box.innerHTML = Array.from(dests).map(c=>`<span class="chip">${c}<button class="rm" type="button" data-code="${c}" aria-label="Remover ${c}">×</button></span>`).join('');
         box.querySelectorAll('.rm').forEach(btn=> btn.addEventListener('click', ()=> removeDestination(btn.dataset.code)) );
       }
 
       function parseCodes(text){ return (text||'').toUpperCase().match(/[A-Z]{3}/g) || []; }
 
-      // ==== Pré-abertura de abas (HOTFIX aplicado) ====
+      // ==== Pré-abertura de abas — cada aba se auto-navega (meta refresh) ====
       function preopenShellTabs(urls){
         return urls.map((u, idx) => {
-          const w = window.open('about:blank', '_blank'); // HOTFIX: sem noopener/noreferrer
+          const delaySec = idx * COOLDOWN_SECONDS; // 0, 15, 30, ...
+          const w = window.open('about:blank', '_blank'); // permitir escrita
           if (w && w.document) {
             try {
-              const title = idx === 0 ? 'Abrindo LATAM…' : `Agendado (${COOLDOWN_SECONDS}s)`;
-              const body = idx === 0 ? 'Abrindo o primeiro destino agora…' : `Este destino abrirá em ${COOLDOWN_SECONDS}s.`;
-              w.document.open();
-              w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:system-ui,Segoe UI,Roboto,Arial;padding:24px;color:#111} .muted{color:#666}</style></head><body><h3>${title}</h3><p class="muted">${body}</p></body></html>`);
-              w.document.close();
+              const uAttr = u.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+              const title = delaySec === 0 ? 'Abrindo LATAM…' : `Agendado (${delaySec}s)`;
+              const body  = delaySec === 0 ? 'Abrindo o primeiro destino agora…' : `Este destino abrirá automaticamente em ${delaySec}s.`;
+              const html = `<!doctype html><html><head><meta charset="utf-8">
+<title>${title}</title>
+<meta http-equiv="refresh" content="${delaySec};url=${uAttr}">
+<style>body{font-family:system-ui,Segoe UI,Roboto,Arial;padding:24px;color:#111}
+a{color:#2563eb;text-decoration:none;border-bottom:1px solid rgba(37,99,235,.4)}</style>
+</head><body>
+  <h3>${title}</h3>
+  <p style="color:#666">${body}</p>
+  <p><a href="${uAttr}" rel="noopener">Ir agora</a></p>
+  <script>
+    (function(){
+      var ms = ${delaySec} * 1000;
+      var url = "${u.replace(/"/g,'\\"')}";
+      if (ms <= 0) { try{ location.replace(url); }catch(e){}; return; }
+      setTimeout(function(){ try{ location.replace(url); }catch(e){} }, ms + 50);
+    })();
+  <\/script>
+</body></html>`;
+              w.document.open(); w.document.write(html); w.document.close();
             } catch (e) { /* ignore */ }
           }
           return w;
         });
       }
 
-      let queueTimer=null, queueIdx=0, queueUrls=[], queueShells=[];
+      // A fila vira "fire-and-forget": as abas cuidam do próprio tempo
+      let queueShells = [];
       function runQueueWithShells(urls, shells){
-        queueUrls = urls.slice(); queueShells = shells.slice(); queueIdx = 0;
-        if(queueShells.some(w => !w)){
-          $('#status').className='msg err';
-          $('#status').textContent='Pop-ups bloqueados. Habilite pop-ups e tente novamente.';
+        queueShells = shells.slice();
+        if (queueShells.some(w => !w)) {
+          $('#status').className = 'msg err';
+          $('#status').textContent = 'Pop-ups bloqueados. Habilite pop-ups e tente novamente.';
           return;
         }
-        try { queueShells[0].location.replace(queueUrls[0]); } catch(e) {}
-        if(queueUrls.length===1){ $('#waitBox').textContent='Busca aberta em nova aba.'; return; }
-
-        $('#stop').disabled=false;
-        let remaining=COOLDOWN_SECONDS;
-        $('#waitBox').innerHTML = `Próximo destino em <span class="countdown" id="cd">${remaining}</span>s… (${queueUrls.length-1} restantes)`;
-        queueTimer = setInterval(()=>{
-          remaining--;
-          const cd=document.getElementById('cd'); if(cd) cd.textContent=String(remaining);
-          if(remaining<=0){
-            const nextIndex = queueIdx + 1;
-            try{ queueShells[nextIndex].location.replace(queueUrls[nextIndex]); }catch(e){}
-            queueIdx++;
-            if(nextIndex >= queueUrls.length-1){
-              clearInterval(queueTimer); queueTimer=null;
-              $('#stop').disabled=true; $('#waitBox').textContent='Todas as buscas foram abertas.';
-            } else {
-              remaining=COOLDOWN_SECONDS;
-              $('#waitBox').innerHTML = `Próximo destino em <span class="countdown" id="cd">${remaining}</span>s… (${queueUrls.length-1-nextIndex} restantes)`;
-            }
-          }
-        }, 1000);
+        if (urls.length === 1) {
+          $('#waitBox').textContent = 'Busca aberta em nova aba.';
+          $('#stop').disabled = true;
+        } else {
+          $('#waitBox').textContent = `Abas agendadas: abrirão automaticamente a cada ${COOLDOWN_SECONDS}s.`;
+          $('#stop').disabled = false;
+        }
       }
 
       function stopQueue(){
-        if(queueTimer){ clearInterval(queueTimer); queueTimer=null; }
-        $('#stop').disabled=true;
-        $('#waitBox').textContent='Fila interrompida.';
+        if (queueShells && queueShells.length){
+          queueShells.forEach(w => {
+            try {
+              if (w && w.location && String(w.location).startsWith('about:blank')) w.close();
+            } catch(e){}
+          });
+        }
+        $('#stop').disabled = true;
+        $('#waitBox').textContent = 'Fila interrompida.';
       }
 
       function updateOutput(params, urls){
@@ -367,7 +386,7 @@
         upcaseIATA($('#origin')); upcaseIATA($('#destination'));
         renderDestChips();
 
-        // Carrega autosuggest: CDN com fallback offline
+        // Autosuggest: CDN com fallback offline
         loadAirportsWithFallback();
 
         // Botões
@@ -381,7 +400,6 @@
 
         // Buscar
         $('#go').addEventListener('click', () => {
-          if(queueTimer) return;
           const origin = $('#origin').value.trim().toUpperCase();
           const date = $('#date').value;
           const explicit = Array.from(dests);
@@ -400,6 +418,8 @@
           }
           updateOutput({ origin, destinations, date }, urls);
           $('#status').className='msg ok';
+
+          // Abre as abas "shell" e agenda auto-navegação
           const shells = preopenShellTabs(urls);
           if(shells.some(w=>!w)){
             $('#status').className='msg err';
@@ -414,7 +434,6 @@
           $('#origin').value=''; $('#destination').value='';
           setMinDateToday(); $('#result').hidden=true;
           $('#status').textContent=''; $('#waitBox').textContent='';
-          if(queueTimer){ clearInterval(queueTimer); queueTimer=null; }
           $('#stop').disabled=true; clearDestinations();
         });
 
@@ -446,7 +465,6 @@
           tassert('adt/chd/inf', sp.get('adt')==='1' && sp.get('chd')==='0' && sp.get('inf')==='0');
           tassert('trip/cabin', sp.get('trip')==='OW' && sp.get('cabin')==='Economy');
           tassert('redemption/sort', sp.get('redemption')==='true' && sp.get('sort')==='RECOMMENDED');
-          tassert('exp_id', !!sp.get('exp_id'));
         }catch(e){ tassert('Parsing URL exemplo', false); }
 
         const ok=validate('BSB','SCL','2025-10-11');
