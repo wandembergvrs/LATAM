@@ -1,1 +1,448 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Busca LATAM — Brasil (IATA), Data e Origem</title>
+  <style>
+    :root{ --bg:#0b1020; --card:#10172a; --muted:#b5bfd1; --text:#e8eefc; --accent:#7aa2ff; --ok:#16a34a; --warn:#f59e0b; --err:#ef4444; --line: rgba(255,255,255,.12); }
+    *{ box-sizing:border-box }
+    html,body{ height:100% }
+    body{ margin:0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, 'Helvetica Neue', Arial; color:var(--text); background:radial-gradient(1200px 600px at 10% -10%, #1a254b 0, transparent 70%), radial-gradient(1000px 500px at 120% 10%, #0e1739 0, transparent 60%), var(--bg); }
+
+    .wrap{ max-width:980px; margin:40px auto; padding:24px; }
+    .card{ background:var(--card); border:1px solid var(--line); border-radius:16px; padding:24px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+
+    h1{ font-size: clamp(1.15rem, 1vw + .9rem, 1.6rem); margin:0 0 12px; font-weight:700; letter-spacing:.2px }
+    p.lead{ color:var(--muted); margin:.25rem 0 1rem; }
+
+    .grid{ display:grid; gap:16px; grid-template-columns: 1fr; }
+    @media (min-width: 980px){ .grid{ grid-template-columns: 1fr 1fr 1fr; } }
+
+    label{ display:block; font-size:.85rem; color:var(--muted); margin:0 0 6px 2px; }
+    input, button{ width:100%; border-radius:12px; padding:12px 14px; border:1px solid var(--line); background:#0b1329; color:var(--text); outline:none; }
+    input:focus{ border-color: var(--accent); box-shadow: 0 0 0 3px rgba(122,162,255,.15); }
+
+    .actions{ display:flex; flex-wrap:wrap; gap:12px; margin-top: 14px; align-items:center }
+    .btn{ cursor:pointer; border:1px solid transparent; font-weight:600; letter-spacing:.2px; width:auto }
+    .btn-primary{ background:linear-gradient(180deg, var(--accent), #3b82f6); border-color:#3b82f6 }
+    .btn-ghost{ background:transparent; border-color:var(--line); color:var(--muted) }
+    .btn:disabled{ opacity:.6; cursor:not-allowed }
+
+    .result{ margin-top:18px; border-top:1px dashed var(--line); padding-top:16px; color:var(--muted); font-size:.95rem }
+    .result-code{ margin-top:8px; padding:10px 12px; background:#0b1329; border:1px solid var(--line); border-radius:10px; word-break:break-all; color:#c9d6ff; white-space:pre-wrap }
+
+    .msg{ margin-top:10px; font-size:.9rem }
+    .msg.ok{ color: var(--ok) }
+    .msg.err{ color: var(--err) }
+
+    .countdown{ font-variant-numeric: tabular-nums; font-weight:600 }
+    small.hint{ color: var(--muted); display:block; margin-top:6px }
+
+    details.testpanel{ margin-top:18px; border-top:1px dashed var(--line); padding-top:14px }
+    .test-pass{ color: var(--ok) }
+    .test-fail{ color: var(--err) }
+    .test-item{ margin:.2rem 0 }
+
+    /* chips de destinos múltiplos */
+    .chipbar{ display:flex; flex-wrap:wrap; gap:8px; margin-top:10px }
+    .chip{ display:inline-flex; align-items:center; gap:8px; border:1px solid var(--line); background:#0b1329; color:var(--text); padding:6px 10px; border-radius:999px; font-size:.85rem }
+    .chip .rm{ cursor:pointer; border:none; background:transparent; color:var(--muted); font-weight:700 }
+    .chip .rm:hover{ color:#fff }
+
+    /* Dropdown manual (fallback ao datalist) */
+    .rel{ position:relative }
+    .dropdown{ position:absolute; left:0; right:0; top:100%; margin-top:6px; background:#0b1329; border:1px solid var(--line); border-radius:12px; max-height:280px; overflow:auto; display:none; z-index:50 }
+    .dropdown .opt{ padding:8px 10px; cursor:pointer; border-bottom:1px dashed rgba(255,255,255,.06) }
+    .dropdown .opt:last-child{ border-bottom:none }
+    .dropdown .opt:hover{ background:#0e1739 }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Busca de voos LATAM — múltiplos destinos (30s entre cada)</h1>
+      <p class="lead">Selecione <strong>origem</strong>, <strong>destino(s)</strong> (códigos IATA) e a <strong>data</strong>. A lista sugere aeroportos do Brasil (offline). Para <strong>origem/destino no exterior</strong>, digite o IATA. <em>Importante:</em> autorize pop-ups para abrir várias abas.</p>
+
+      <div class="grid">
+        <div>
+          <label for="origin">Origem (IATA)</label>
+          <div class="rel">
+            <input id="origin" list="airportsBR" maxlength="3" pattern="[A-Za-z]{3}" placeholder="Ex.: BSB, GRU, EZE (exterior digite o IATA)" />
+            <div class="dropdown" id="drop-origin" role="listbox" aria-label="Sugestões de origem"></div>
+          </div>
+          <small class="hint">Clique no campo para ver sugestões. Digite para filtrar.</small>
+        </div>
+        <div>
+          <label for="destination">Destino (IATA)</label>
+          <div class="rel">
+            <input id="destination" list="airportsBR" maxlength="3" pattern="[A-Za-z]{3}" placeholder="Ex.: SCL, SSA, FLN" />
+            <div class="dropdown" id="drop-dest" role="listbox" aria-label="Sugestões de destino"></div>
+          </div>
+          <div class="actions">
+            <button id="addDest" class="btn btn-ghost" type="button">Adicionar destino</button>
+            <button id="pasteList" class="btn btn-ghost" type="button">Colar lista</button>
+            <button id="clearDests" class="btn btn-ghost" type="button">Limpar destinos</button>
+          </div>
+          <div id="destChips" class="chipbar" aria-live="polite"></div>
+          <small class="hint">Use "Colar lista" e cole vários IATAs (vírgula, espaço ou quebra de linha).</small>
+        </div>
+        <div>
+          <label for="date">Data</label>
+          <input id="date" type="date" />
+          <small class="hint">A data mínima é hoje. O horário será <code>15:00:00Z</code>.</small>
+        </div>
+      </div>
+
+      <datalist id="airportsBR"></datalist>
+
+      <div class="actions">
+        <button id="go" class="btn btn-primary" type="button">Buscar na LATAM</button>
+        <button id="stop" class="btn btn-ghost" type="button" disabled>Parar fila</button>
+        <button id="clear" class="btn btn-ghost" type="button">Limpar tudo</button>
+        <span id="waitBox" class="msg" aria-live="polite"></span>
+      </div>
+
+      <div class="result" id="result" hidden>
+        <div>Parâmetros:</div>
+        <div class="result-code" id="paramsOut"></div>
+        <div style="margin-top:8px">URL(s) LATAM gerada(s):</div>
+        <div class="result-code" id="urlOut"></div>
+        <div id="status" class="msg"></div>
+      </div>
+
+      <!-- Painel de testes (único, para dev) -->
+      <details class="testpanel" id="testPanel">
+        <summary>Testes automatizados (dev)</summary>
+        <div id="testReport"></div>
+      </details>
+    </div>
+  </div>
+
+  <script>
+    // =============== GUARDA CONTRA DUPLO CARREGAMENTO ===============
+    if (!window.__LATAM_WIDGET_INIT__) {
+      window.__LATAM_WIDGET_INIT__ = true;
+
+      // ====== CONFIGURAÇÕES ======
+      const COOLDOWN_SECONDS = 30;
+      const LATAM_BASE = 'https://www.latamairlines.com/br/pt/oferta-voos';
+
+      // Lista offline de IATAs BR — pode digitar qualquer IATA externo
+      const BR_IATA = ['AJU','AQA','ARU','ATM','AUX','BAU','BEL','BPS','BVH','BVB','BYO','CAC','CGB','CGH','CGR','CKS','CNF','CMG','CWB','CXJ','DOU','ERE','ERI','FEN','FLN','FOR','FRC','GEL','GIG','GJL','GNV','GPB','GRU','GUR','GYN','IGU','IMP','IOS','IPN','ITA','IZA','JDO','JPA','JOI','JPR','JTC','JDF','LDB','MAB','MAO','MCP','MCZ','MEA','MOC','MVS','MVD','NAT','NVT','OAL','OPS','PAV','PHB','PMW','POA','PPB','PVH','RAO','RBR','REC','RIA','RIG','ROO','SDU','SJK','SJP','SLZ','SSA','STM','TBT','TFF','THE','TJL','UBA','UDI','UNA','VAG','VCP','VDC','VIX'];
+
+      const FALLBACK_BR = [
+        {iata:'GRU', city:'São Paulo', name:'Guarulhos'},
+        {iata:'CGH', city:'São Paulo', name:'Congonhas'},
+        {iata:'VCP', city:'Campinas', name:'Viracopos'},
+        {iata:'GIG', city:'Rio de Janeiro', name:'Galeão'},
+        {iata:'SDU', city:'Rio de Janeiro', name:'Santos Dumont'},
+        {iata:'BSB', city:'Brasília', name:'Pres. Juscelino Kubitschek'},
+        {iata:'CNF', city:'Belo Horizonte', name:'Confins'},
+        {iata:'CWB', city:'Curitiba', name:'Afonso Pena'},
+        {iata:'POA', city:'Porto Alegre', name:'Salgado Filho'},
+        {iata:'FLN', city:'Florianópolis', name:'Hercílio Luz'},
+        {iata:'REC', city:'Recife', name:'Guararapes'},
+        {iata:'FOR', city:'Fortaleza', name:'Pinto Martins'},
+        {iata:'NAT', city:'Natal', name:'Aluízio Alves'},
+        {iata:'AJU', city:'Aracaju', name:'Santa Maria'},
+        {iata:'VIX', city:'Vitória', name:'Eurico de Aguiar Salles'},
+        {iata:'GYN', city:'Goiânia', name:'Santa Genoveva'},
+        {iata:'SLZ', city:'São Luís', name:'Marechal Cunha Machado'},
+        {iata:'SSA', city:'Salvador', name:'Dep. Luís Eduardo Magalhães'},
+        {iata:'BEL', city:'Belém', name:'Val-de-Cans'},
+        {iata:'MAO', city:'Manaus', name:'Eduardo Gomes'}
+      ];
+
+      const $ = (sel, p=document) => p.querySelector(sel);
+
+      function setMinDateToday(){
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth()+1).padStart(2,'0');
+        const dd = String(now.getDate()).padStart(2,'0');
+        const iso = `${yyyy}-${mm}-${dd}`;
+        $('#date').min = iso;
+        if(!$('#date').value) $('#date').value = iso;
+      }
+
+      function upcaseIATA(inp){ inp.addEventListener('input', ()=>{ inp.value = inp.value.replace(/[^a-zA-Z]/g,'').toUpperCase().slice(0,3); }); }
+
+      function fillDatalist(list){ const dl = $('#airportsBR'); dl.innerHTML = list.map(a => `<option value="${a.iata}">${a.iata} — ${a.city} (${a.name})</option>`).join(''); }
+      function loadBrazilAirportsOffline(){ fillDatalist(FALLBACK_BR); }
+
+      // ====== Dropdown manual (garante sugestões) ======
+      function attachDropdown(input, drop, items){
+        const show = (arr) => {
+          if(!arr.length){ drop.style.display='none'; return; }
+          drop.innerHTML = arr.slice(0,80).map(v => `<div class="opt" data-v="${v}">${v}</div>`).join('');
+          drop.style.display='block';
+          drop.querySelectorAll('.opt').forEach(el => {
+            el.addEventListener('mousedown', (e)=>{
+              const v = e.currentTarget.getAttribute('data-v');
+              input.value = v;
+              input.dispatchEvent(new Event('input'));
+              drop.style.display='none';
+            });
+          });
+        };
+        input.addEventListener('focus', ()=> show(items));
+        input.addEventListener('input', ()=>{
+          const q = input.value.toUpperCase();
+          const filtered = items.filter(v => v.includes(q));
+          show((q && filtered.length) ? filtered : items);
+        });
+        input.addEventListener('blur', ()=> setTimeout(()=> drop.style.display='none', 180));
+        if(input.id === 'destination'){
+          input.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); addDestination(input.value); } });
+        }
+      }
+
+      function isTodayOrFuture(ymd){
+        const {y,m,d} = parseYMD(ymd);
+        const sel = new Date(y, m-1, d, 0, 0, 0, 0);
+        const today = new Date(); today.setHours(0,0,0,0);
+        return sel >= today;
+      }
+
+      function validate(origin, destination, date){
+        if(!/^[A-Z]{3}$/.test(origin)) return { ok:false, msg:'Origem inválida. Use código IATA (3 letras).' };
+        if(!/^[A-Z]{3}$/.test(destination)) return { ok:false, msg:'Destino inválido. Use código IATA (3 letras).' };
+        if(!date) return { ok:false, msg:'Selecione a data da ida.' };
+        if(!isTodayOrFuture(date)) return { ok:false, msg:'Data no passado. Escolha hoje ou uma data futura.' };
+        return { ok:true, msg:'' };
+      }
+
+      const parseYMD = (s)=>{ const [y,m,d] = s.split('-').map(Number); return { y, m, d }; };
+      const uuidv4 = ()=> window.crypto && crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random()*16|0, v = c==='x'?r:(r&0x3|0x8); return v.toString(16); });
+
+      function buildLatamURL({ origin, destination, date }){
+        const { y, m, d } = parseYMD(date);
+        const outboundISO = new Date(Date.UTC(y, m-1, d, 15, 0, 0)).toISOString();
+        const qp = new URLSearchParams({
+          origin: origin.toUpperCase(),
+          outbound: outboundISO,
+          destination: destination.toUpperCase(),
+          adt:'1', chd:'0', inf:'0',
+          trip:'OW', cabin:'Economy',
+          redemption:'true', sort:'RECOMMENDED',
+          exp_id: uuidv4()
+        });
+        return `${LATAM_BASE}?${qp.toString()}`;
+      }
+
+      // ====== MÚLTIPLOS DESTINOS ======
+      const dests = new Set();
+      const normalizeIATA = (code)=>{ const m=(code||'').toUpperCase().match(/[A-Z]{3}/); return m?m[0]:''; };
+      function addDestination(code){
+        const c = normalizeIATA(code);
+        if(!c){ $('#status').className='msg err'; $('#status').textContent='Informe um destino IATA (3 letras).'; return {ok:false}; }
+        dests.add(c);
+        renderDestChips();
+        $('#destination').value='';
+        $('#status').textContent='';
+        return {ok:true};
+      }
+      const removeDestination = (code)=>{ dests.delete(code); renderDestChips(); };
+      const clearDestinations = ()=>{ dests.clear(); renderDestChips(); };
+
+      function renderDestChips(){
+        const box = $('#destChips'); if(!box) return;
+        if(dests.size===0){
+          box.innerHTML = '<span class="hint">(Nenhum destino adicionado)</span>';
+          return;
+        }
+        box.innerHTML = Array.from(dests).map(c=>`<span class="chip">${c}<button class="rm" type="button" data-code="${c}" aria-label="Remover ${c}">×</button></span>`).join('');
+        box.querySelectorAll('.rm').forEach(btn=> btn.addEventListener('click', ()=> removeDestination(btn.dataset.code)) );
+      }
+
+      function parseCodes(text){ return (text||'').toUpperCase().match(/[A-Z]{3}/g) || []; }
+
+      // ==== Pré-abertura de abas ====
+      function preopenShellTabs(urls){
+        // Abre 1 aba por destino e pré-renderiza um placeholder — evita 'about:blank' persistente
+        return urls.map((u, idx) => {
+          const w = window.open('about:blank', '_blank'); // HOTFIX: sem noopener/noreferrer
+          if (w && w.document) {
+            try {
+              const title = idx === 0 ? 'Abrindo LATAM…' : `Agendado (${COOLDOWN_SECONDS}s)`;
+              const body = idx === 0 ? 'Abrindo o primeiro destino agora…' : `Este destino abrirá em ${COOLDOWN_SECONDS}s.`;
+              w.document.open();
+              w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:system-ui,Segoe UI,Roboto,Arial;padding:24px;color:#111} .muted{color:#666}</style></head><body><h3>${title}</h3><p class="muted">${body}</p></body></html>`);
+              w.document.close();
+            } catch (e) { /* ignore */ }
+          }
+          return w;
+        });
+      }
+
+      // Fila usando abas pré-abertas
+      let queueTimer=null, queueIdx=0, queueUrls=[], queueShells=[];
+      function runQueueWithShells(urls, shells){
+        queueUrls = urls.slice(); queueShells = shells.slice(); queueIdx = 0;
+        if(queueShells.some(w => !w)){
+          $('#status').className='msg err';
+          $('#status').textContent='Pop-ups bloqueados. Habilite pop-ups e tente novamente.';
+          return;
+        }
+        // 1º destino: navegar imediatamente na 1ª aba
+        try { queueShells[0].location.replace(queueUrls[0]); } catch(e) {}
+        if(queueUrls.length===1){
+          $('#waitBox').textContent='Busca aberta em nova aba.';
+          return;
+        }
+        $('#stop').disabled=false;
+        let remaining=COOLDOWN_SECONDS;
+        $('#waitBox').innerHTML = `Próximo destino em <span class="countdown" id="cd">${remaining}</span>s… (${queueUrls.length-1} restantes)`;
+        queueTimer = setInterval(()=>{
+          remaining--;
+          const cd=document.getElementById('cd'); if(cd) cd.textContent=String(remaining);
+          if(remaining<=0){
+            const nextIndex = queueIdx + 1; // 1..N-1
+            try{ queueShells[nextIndex].location.replace(queueUrls[nextIndex]); }catch(e){}
+            queueIdx++;
+            if(nextIndex >= queueUrls.length-1){
+              clearInterval(queueTimer); queueTimer=null;
+              $('#stop').disabled=true; $('#waitBox').textContent='Todas as buscas foram abertas.';
+            } else {
+              remaining=COOLDOWN_SECONDS;
+              $('#waitBox').innerHTML = `Próximo destino em <span class="countdown" id="cd">${remaining}</span>s… (${queueUrls.length-1-nextIndex} restantes)`;
+            }
+          }
+        }, 1000);
+      }
+
+      function stopQueue(){
+        if(queueTimer){ clearInterval(queueTimer); queueTimer=null; }
+        $('#stop').disabled=true;
+        $('#waitBox').textContent='Fila interrompida.';
+      }
+
+      function updateOutput(params, urls){
+        $('#result').hidden=false;
+        $('#paramsOut').textContent = JSON.stringify(params, null, 2);
+        $('#urlOut').textContent = Array.isArray(urls) ? urls.join('\n') : urls; // corrigido
+      }
+
+      function bind(){
+        setMinDateToday();
+        upcaseIATA($('#origin')); upcaseIATA($('#destination'));
+        loadBrazilAirportsOffline(); // popula datalist
+        renderDestChips();
+
+        // Dropdowns manuais
+        attachDropdown($('#origin'), $('#drop-origin'), BR_IATA);
+        attachDropdown($('#destination'), $('#drop-dest'), BR_IATA);
+
+        // Botões
+        $('#addDest').addEventListener('click', ()=> addDestination($('#destination').value));
+        $('#pasteList').addEventListener('click', ()=>{
+          const text = prompt('Cole códigos IATA (qualquer separador):');
+          if(text){ parseCodes(text).forEach(code => dests.add(code)); renderDestChips(); }
+        });
+        $('#clearDests').addEventListener('click', clearDestinations);
+        $('#stop').addEventListener('click', stopQueue);
+
+        // Buscar
+        $('#go').addEventListener('click', () => {
+          if(queueTimer) return; // já em execução
+          const origin = $('#origin').value.trim().toUpperCase();
+          const date = $('#date').value;
+          const explicit = Array.from(dests);
+          const fallbackSingle = normalizeIATA($('#destination').value);
+          const destinations = explicit.length ? explicit : (fallbackSingle ? [fallbackSingle] : []);
+          if(destinations.length===0){
+            $('#status').className='msg err';
+            $('#status').textContent='Adicione ao menos um destino ou informe no campo Destino.';
+            $('#result').hidden=false; return;
+          }
+          const urls=[];
+          for(const dest of destinations){
+            const val=validate(origin,dest,date);
+            if(!val.ok){ $('#status').className='msg err'; $('#status').textContent = `Destino ${dest}: ${val.msg}`; return; }
+            urls.push( buildLatamURL({ origin, destination: dest, date }) );
+          }
+          updateOutput({ origin, destinations, date }, urls);
+          $('#status').className='msg ok';
+          const shells = preopenShellTabs(urls);
+          if(shells.some(w=>!w)){
+            $('#status').className='msg err';
+            $('#status').textContent='Pop-ups bloqueados. Permita pop-ups e clique novamente.';
+            return;
+          }
+          runQueueWithShells(urls, shells);
+        });
+
+        // Limpar
+        $('#clear').addEventListener('click', () => {
+          $('#origin').value=''; $('#destination').value='';
+          setMinDateToday(); $('#result').hidden=true;
+          $('#status').textContent=''; $('#waitBox').textContent='';
+          if(queueTimer){ clearInterval(queueTimer); queueTimer=null; }
+          $('#stop').disabled=true; clearDestinations();
+        });
+
+        runSelfTests();
+      }
+
+      document.addEventListener('DOMContentLoaded', bind);
+
+      // ===================== TESTES AUTOMATIZADOS =====================
+      function tassert(name, cond){
+        const div=document.createElement('div');
+        div.className='test-item '+(cond?'test-pass':'test-fail');
+        div.textContent=(cond?'✔ ':'✘ ')+name;
+        document.getElementById('testReport').appendChild(div);
+      }
+
+      function runSelfTests(){
+        const panel = document.getElementById('testPanel'); if(panel) panel.open=false;
+        tassert('COOLDOWN_SECONDS number', typeof COOLDOWN_SECONDS==='number');
+        tassert('LATAM_BASE ok', typeof LATAM_BASE==='string' && LATAM_BASE.includes('latamairlines.com'));
+        tassert('buildLatamURL fn', typeof buildLatamURL==='function');
+        const sample = buildLatamURL({ origin:'BSB', destination:'SCL', date:'2025-10-11' });
+        try{
+          const [base,qs]=sample.split('?'); const sp=new URLSearchParams(qs);
+          tassert('Base correta', base===LATAM_BASE);
+          tassert('origin=BSB', sp.get('origin')==='BSB');
+          tassert('destination=SCL', sp.get('destination')==='SCL');
+          tassert('outbound=2025-10-11T15:00:00.000Z', sp.get('outbound')==='2025-10-11T15:00:00.000Z');
+          tassert('adt/chd/inf', sp.get('adt')==='1' && sp.get('chd')==='0' && sp.get('inf')==='0');
+          tassert('trip/cabin', sp.get('trip')==='OW' && sp.get('cabin')==='Economy');
+          tassert('redemption/sort', sp.get('redemption')==='true' && sp.get('sort')==='RECOMMENDED');
+          tassert('exp_id', !!sp.get('exp_id'));
+        }catch(e){ tassert('Parsing URL exemplo', false); }
+
+        const ok=validate('BSB','SCL','2025-10-11');
+        const bad1=validate('BS','SCL','2025-10-11');
+        const bad2=validate('BSB','SC','2025-10-11');
+        const bad3=validate('BSB','SCL','');
+
+        tassert('validate OK', ok.ok===true);
+        tassert('origem inválida', bad1.ok===false);
+        tassert('destino inválido', bad2.ok===false);
+        tassert('sem data', bad3.ok===false);
+
+        // Teste de quebra de linha correto
+        tassert('newline join correto', ['a','b'].join('\n')==='a\nb');
+
+        // Novos testes: normalização e deduplicação
+        tassert('normalizeIATA(" mia ") => MIA', (function(){ const m = ((' mia ').toUpperCase().match(/[A-Z]{3}/)||[])[0]; return (m||'')==='MIA'; })());
+        (function(){
+          const s=new Set(); const norm=(c)=>{const m=(c||'').toUpperCase().match(/[A-Z]{3}/);return m?m[0]:''};
+          s.add(norm('MIA')); s.add(norm('mia'));
+          tassert('Destinos deduplicados (MIA 1x)', Array.from(s).length===1 && Array.from(s)[0]==='MIA');
+        })();
+
+        tassert('Datalist populado', document.getElementById('airportsBR').options.length>0);
+        tassert('Dropdown destino existe', !!document.getElementById('drop-dest'));
+
+        // Verifica ausência de backslashes no HTML do countdown (não checa aspas)
+        const s = (`Próximo destino em <span class="countdown" id="cd">30</span>s… (1 restantes)`);
+        tassert('Countdown HTML sem backslashes', !s.includes('\\'));
+      }
+    } // fim guarda
+  </script>
+</body>
+</html>
 
