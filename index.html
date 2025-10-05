@@ -33,8 +33,8 @@
     .result-code{ margin-top:8px; padding:10px 12px; background:#0b1329; border:1px solid var(--line); border-radius:10px; word-break:break-all; color:#c9d6ff; white-space:pre-wrap }
 
     .msg{ margin-top:10px; font-size:.9rem }
-    .msg.ok{ color: var(--ok) }
-    .msg.err{ color: var(--err) }
+    .msg.ok{ color: var(--Ok, var(--ok)) }
+    .msg.err{ color: var(--Err, var(--err)) }
 
     .countdown{ font-variant-numeric: tabular-nums; font-weight:600 }
     small.hint{ color: var(--muted); display:block; margin-top:6px }
@@ -44,13 +44,11 @@
     .test-fail{ color: var(--err) }
     .test-item{ margin:.2rem 0 }
 
-    /* chips de destinos múltiplos */
     .chipbar{ display:flex; flex-wrap:wrap; gap:8px; margin-top:10px }
     .chip{ display:inline-flex; align-items:center; gap:8px; border:1px solid var(--line); background:#0b1329; color:var(--text); padding:6px 10px; border-radius:999px; font-size:.85rem }
     .chip .rm{ cursor:pointer; border:none; background:transparent; color:var(--muted); font-weight:700 }
     .chip .rm:hover{ color:#fff }
 
-    /* Dropdown manual (fallback ao datalist) */
     .rel{ position:relative }
     .dropdown{ position:absolute; left:0; right:0; top:100%; margin-top:6px; background:#0b1329; border:1px solid var(--line); border-radius:12px; max-height:280px; overflow:auto; display:none; z-index:50 }
     .dropdown .opt{ padding:8px 10px; cursor:pointer; border-bottom:1px dashed rgba(255,255,255,.06) }
@@ -62,13 +60,13 @@
   <div class="wrap">
     <div class="card">
       <h1>Busca de voos LATAM — múltiplos destinos (15s entre cada)</h1>
-      <p class="lead">Selecione <strong>origem</strong>, <strong>destino(s)</strong> (códigos IATA) e a <strong>data</strong>. A lista sugere aeroportos do Brasil (offline). Para <strong>origem/destino no exterior</strong>, digite o IATA. <em>Importante:</em> autorize pop-ups para abrir várias abas.</p>
+      <p class="lead">Selecione <strong>origem</strong>, <strong>destino(s)</strong> (códigos IATA) e a <strong>data</strong>. O autosuggest usa a base global (CDN) com fallback offline. <em>Importante:</em> autorize pop-ups para abrir várias abas.</p>
 
       <div class="grid">
         <div>
           <label for="origin">Origem (IATA)</label>
           <div class="rel">
-            <input id="origin" list="airportsBR" maxlength="3" pattern="[A-Za-z]{3}" placeholder="Ex.: BSB, GRU, EZE (exterior digite o IATA)" />
+            <input id="origin" list="airportsBR" maxlength="3" pattern="[A-Za-z]{3}" placeholder="Ex.: BSB, GRU, EZE" />
             <div class="dropdown" id="drop-origin" role="listbox" aria-label="Sugestões de origem"></div>
           </div>
           <small class="hint">Clique no campo para ver sugestões. Digite para filtrar.</small>
@@ -111,7 +109,6 @@
         <div id="status" class="msg"></div>
       </div>
 
-      <!-- Painel de testes (único, para dev) -->
       <details class="testpanel" id="testPanel">
         <summary>Testes automatizados (dev)</summary>
         <div id="testReport"></div>
@@ -120,15 +117,15 @@
   </div>
 
   <script>
-    // =============== GUARDA CONTRA DUPLO CARREGAMENTO ===============
     if (!window.__LATAM_WIDGET_INIT__) {
       window.__LATAM_WIDGET_INIT__ = true;
 
-      // ====== CONFIGURAÇÕES ======
+      // ====== CONFIG ======
       const COOLDOWN_SECONDS = 15;
       const LATAM_BASE = 'https://www.latamairlines.com/br/pt/oferta-voos';
+      const SUGGEST_ONLY_BR = false; // <- mude para true se quiser sugerir apenas Brasil
 
-      // Lista offline de IATAs BR — pode digitar qualquer IATA externo
+      // (mantido) lista offline de BR para fallback visual
       const BR_IATA = ['AJU','AQA','ARU','ATM','AUX','BAU','BEL','BPS','BVH','BVB','BYO','CAC','CGB','CGH','CGR','CKS','CNF','CMG','CWB','CXJ','DOU','ERE','ERI','FEN','FLN','FOR','FRC','GEL','GIG','GJL','GNV','GPB','GRU','GUR','GYN','IGU','IMP','IOS','IPN','ITA','IZA','JDO','JPA','JOI','JPR','JTC','JDF','LDB','MAB','MAO','MCP','MCZ','MEA','MOC','MVS','MVD','NAT','NVT','OAL','OPS','PAV','PHB','PMW','POA','PPB','PVH','RAO','RBR','REC','RIA','RIG','ROO','SDU','SJK','SJP','SLZ','SSA','STM','TBT','TFF','THE','TJL','UBA','UDI','UNA','VAG','VCP','VDC','VIX'];
 
       const FALLBACK_BR = [
@@ -155,6 +152,7 @@
       ];
 
       const $ = (sel, p=document) => p.querySelector(sel);
+      const isBR = (c)=> /^(BR|BRA|Brazil|Brasil)$/i.test(c||'');
 
       function setMinDateToday(){
         const now = new Date();
@@ -168,10 +166,55 @@
 
       function upcaseIATA(inp){ inp.addEventListener('input', ()=>{ inp.value = inp.value.replace(/[^a-zA-Z]/g,'').toUpperCase().slice(0,3); }); }
 
-      function fillDatalist(list){ const dl = $('#airportsBR'); dl.innerHTML = list.map(a => `<option value="${a.iata}">${a.iata} — ${a.city} (${a.name})</option>`).join(''); }
-      function loadBrazilAirportsOffline(){ fillDatalist(FALLBACK_BR); }
+      function fillDatalist(list){
+        const dl = $('#airportsBR');
+        dl.innerHTML = list.map(a => `<option value="${a.iata}">${a.iata} — ${a.city||''} (${a.name||''})</option>`).join('');
+      }
 
-      // ====== Dropdown manual (garante sugestões) ======
+      // ====== Autosuggest (CDN com fallback) ======
+      async function fetchIATAsFromCDN(timeoutMs=5000){
+        const ctrl = new AbortController();
+        const timer = setTimeout(()=>ctrl.abort(), timeoutMs);
+        try{
+          const url = 'https://cdn.jsdelivr.net/gh/mwgg/Airports/airports.json';
+          const res = await fetch(url, { signal: ctrl.signal, cache: 'force-cache' });
+          if(!res.ok) throw new Error('HTTP '+res.status);
+          const data = await res.json(); // objeto { ICAO: {iata, name, city, country, ...}, ... }
+          const all = Object.values(data)
+            .filter(a => a && a.iata && /^[A-Z]{3}$/.test(a.iata))
+            .map(a => ({ iata:a.iata.toUpperCase(), city:a.city||'', name:a.name||'', country:a.country||'' }));
+          const filtered = SUGGEST_ONLY_BR ? all.filter(a => isBR(a.country)) : all;
+          // Ordena: IATA, depois City (evita jitter no dropdown)
+          filtered.sort((x,y)=> x.iata.localeCompare(y.iata) || (x.city||'').localeCompare(y.city||''));
+          return filtered;
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+
+      async function loadAirportsWithFallback(){
+        // Primeiro mostra algo útil imediatamente (fallback visual), depois tenta CDN.
+        fillDatalist(FALLBACK_BR);
+        let attachList = BR_IATA.slice(); // dropdown mínimo para já funcionar
+        attachDropdown($('#origin'), $('#drop-origin'), attachList);
+        attachDropdown($('#destination'), $('#drop-dest'), attachList);
+
+        $('#status').className='msg'; $('#status').textContent='Carregando lista global de IATAs…';
+        try{
+          const list = await fetchIATAsFromCDN(5000);
+          fillDatalist(list);
+          const listaIATA = list.map(a => a.iata);
+          // Reanexa dropdowns com a lista completa
+          attachDropdown($('#origin'), $('#drop-origin'), listaIATA);
+          attachDropdown($('#destination'), $('#drop-dest'), listaIATA);
+          $('#status').className='msg ok'; $('#status').textContent='Lista IATA carregada (CDN).';
+        } catch(e){
+          // Mantém o fallback offline
+          $('#status').className='msg err'; $('#status').textContent='CDN indisponível — usando lista offline (BR).';
+        }
+      }
+
+      // ====== Dropdown manual ======
       function attachDropdown(input, drop, items){
         const show = (arr) => {
           if(!arr.length){ drop.style.display='none'; return; }
@@ -231,7 +274,7 @@
         return `${LATAM_BASE}?${qp.toString()}`;
       }
 
-      // ====== MÚLTIPLOS DESTINOS ======
+      // ====== Múltiplos destinos ======
       const dests = new Set();
       const normalizeIATA = (code)=>{ const m=(code||'').toUpperCase().match(/[A-Z]{3}/); return m?m[0]:''; };
       function addDestination(code){
@@ -258,9 +301,8 @@
 
       function parseCodes(text){ return (text||'').toUpperCase().match(/[A-Z]{3}/g) || []; }
 
-      // ==== Pré-abertura de abas ====
+      // ==== Pré-abertura de abas (HOTFIX aplicado) ====
       function preopenShellTabs(urls){
-        // Abre 1 aba por destino e pré-renderiza um placeholder — evita 'about:blank' persistente
         return urls.map((u, idx) => {
           const w = window.open('about:blank', '_blank'); // HOTFIX: sem noopener/noreferrer
           if (w && w.document) {
@@ -276,7 +318,6 @@
         });
       }
 
-      // Fila usando abas pré-abertas
       let queueTimer=null, queueIdx=0, queueUrls=[], queueShells=[];
       function runQueueWithShells(urls, shells){
         queueUrls = urls.slice(); queueShells = shells.slice(); queueIdx = 0;
@@ -285,12 +326,9 @@
           $('#status').textContent='Pop-ups bloqueados. Habilite pop-ups e tente novamente.';
           return;
         }
-        // 1º destino: navegar imediatamente na 1ª aba
         try { queueShells[0].location.replace(queueUrls[0]); } catch(e) {}
-        if(queueUrls.length===1){
-          $('#waitBox').textContent='Busca aberta em nova aba.';
-          return;
-        }
+        if(queueUrls.length===1){ $('#waitBox').textContent='Busca aberta em nova aba.'; return; }
+
         $('#stop').disabled=false;
         let remaining=COOLDOWN_SECONDS;
         $('#waitBox').innerHTML = `Próximo destino em <span class="countdown" id="cd">${remaining}</span>s… (${queueUrls.length-1} restantes)`;
@@ -298,7 +336,7 @@
           remaining--;
           const cd=document.getElementById('cd'); if(cd) cd.textContent=String(remaining);
           if(remaining<=0){
-            const nextIndex = queueIdx + 1; // 1..N-1
+            const nextIndex = queueIdx + 1;
             try{ queueShells[nextIndex].location.replace(queueUrls[nextIndex]); }catch(e){}
             queueIdx++;
             if(nextIndex >= queueUrls.length-1){
@@ -321,18 +359,16 @@
       function updateOutput(params, urls){
         $('#result').hidden=false;
         $('#paramsOut').textContent = JSON.stringify(params, null, 2);
-        $('#urlOut').textContent = Array.isArray(urls) ? urls.join('\n') : urls; // corrigido
+        $('#urlOut').textContent = Array.isArray(urls) ? urls.join('\n') : urls;
       }
 
       function bind(){
         setMinDateToday();
         upcaseIATA($('#origin')); upcaseIATA($('#destination'));
-        loadBrazilAirportsOffline(); // popula datalist
         renderDestChips();
 
-        // Dropdowns manuais
-        attachDropdown($('#origin'), $('#drop-origin'), BR_IATA);
-        attachDropdown($('#destination'), $('#drop-dest'), BR_IATA);
+        // Carrega autosuggest: CDN com fallback offline
+        loadAirportsWithFallback();
 
         // Botões
         $('#addDest').addEventListener('click', ()=> addDestination($('#destination').value));
@@ -345,11 +381,11 @@
 
         // Buscar
         $('#go').addEventListener('click', () => {
-          if(queueTimer) return; // já em execução
+          if(queueTimer) return;
           const origin = $('#origin').value.trim().toUpperCase();
           const date = $('#date').value;
           const explicit = Array.from(dests);
-          const fallbackSingle = normalizeIATA($('#destination').value);
+          const fallbackSingle = (($('#destination').value||'').toUpperCase().match(/[A-Z]{3}/)||[])[0] || '';
           const destinations = explicit.length ? explicit : (fallbackSingle ? [fallbackSingle] : []);
           if(destinations.length===0){
             $('#status').className='msg err';
@@ -387,7 +423,7 @@
 
       document.addEventListener('DOMContentLoaded', bind);
 
-      // ===================== TESTES AUTOMATIZADOS =====================
+      // ====== TESTES ======
       function tassert(name, cond){
         const div=document.createElement('div');
         div.className='test-item '+(cond?'test-pass':'test-fail');
@@ -423,26 +459,22 @@
         tassert('destino inválido', bad2.ok===false);
         tassert('sem data', bad3.ok===false);
 
-        // Teste de quebra de linha correto
         tassert('newline join correto', ['a','b'].join('\n')==='a\nb');
 
-        // Novos testes: normalização e deduplicação
-        tassert('normalizeIATA(" mia ") => MIA', (function(){ const m = ((' mia ').toUpperCase().match(/[A-Z]{3}/)||[])[0]; return (m||'')==='MIA'; })());
+        tassert('normalizeIATA(\" mia \") => MIA', (function(){ const m = ((' mia ').toUpperCase().match(/[A-Z]{3}/)||[])[0]; return (m||'')==='MIA'; })());
         (function(){
           const s=new Set(); const norm=(c)=>{const m=(c||'').toUpperCase().match(/[A-Z]{3}/);return m?m[0]:''};
           s.add(norm('MIA')); s.add(norm('mia'));
           tassert('Destinos deduplicados (MIA 1x)', Array.from(s).length===1 && Array.from(s)[0]==='MIA');
         })();
 
-        tassert('Datalist populado', document.getElementById('airportsBR').options.length>0);
+        tassert('Datalist existe', !!document.getElementById('airportsBR'));
         tassert('Dropdown destino existe', !!document.getElementById('drop-dest'));
 
-        // Verifica ausência de backslashes no HTML do countdown (não checa aspas)
-        const s = (`Próximo destino em <span class="countdown" id="cd">30</span>s… (1 restantes)`);
+        const s = (`Próximo destino em <span class="countdown" id="cd">15</span>s… (1 restantes)`);
         tassert('Countdown HTML sem backslashes', !s.includes('\\'));
       }
-    } // fim guarda
+    }
   </script>
 </body>
 </html>
-
