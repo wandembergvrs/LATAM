@@ -35,6 +35,7 @@
     .msg{ margin-top:10px; font-size:.9rem }
     .msg.ok{ color: var(--ok) }
     .msg.err{ color: var(--err) }
+    .msg.warn{ color: var(--warn) }
 
     small.hint{ color: var(--muted); display:block; margin-top:6px }
 
@@ -94,6 +95,7 @@
           </div>
           <div class="actions">
             <button id="addDest" class="btn btn-ghost" type="button">Adicionar destino</button>
+            <button id="pasteList" class="btn btn-ghost" type="button">Colar lista</button>
             <button id="clearDests" class="btn btn-ghost" type="button">Limpar destinos</button>
           </div>
           <div id="destChips" class="chipbar" aria-live="polite"></div>
@@ -163,13 +165,13 @@
       window.__LATAM_WIDGET_INIT__ = true;
 
       // ====== CONFIG ======
-      const COOLDOWN_DEFAULT = 15;                 // intervalo padrão entre abas
-      const FIRST_DELAY_MOBILE_SECONDS = 3;        // atraso inicial em mobile/safari (garante abrir todas)
+      const COOLDOWN_DEFAULT = 15;
+      const FIRST_DELAY_MOBILE_SECONDS = 3;
       const LATAM_BASE = 'https://www.latamairlines.com/br/pt/oferta-voos';
-      const USE_EXP_ID = true;                     // id aleatório por aba
-      const FORCE_WEB_PARAM = { channel: 'web' };  // reforça web
+      const USE_EXP_ID = true;
+      const FORCE_WEB_PARAM = { channel: 'web' };
 
-      // Países (ISO2 -> nome PT-BR) — conjunto básico
+      // Países (ISO2 -> nome PT-BR)
       const ISO_TO_PT = {
         BR:'Brasil', AR:'Argentina', CL:'Chile', UY:'Uruguai', PY:'Paraguai', BO:'Bolívia', PE:'Peru',
         CO:'Colômbia', EC:'Equador', VE:'Venezuela', US:'Estados Unidos', CA:'Canadá', MX:'México',
@@ -236,7 +238,6 @@
       }
       function upcaseIATA(inp){ inp.addEventListener('input', ()=>{ inp.value = inp.value.replace(/[^a-zA-Z]/g,'').toUpperCase().slice(0,3); updateGoState(); }); }
 
-      // ===== País / airports util =====
       function normalizeCountryFields(a){
         let codeCandidate = (a.iso || a.iso_country || a.country_code || a.country || '').toString().trim();
         let cc = '';
@@ -443,6 +444,36 @@
         box.querySelectorAll('.rm').forEach(btn=> btn.addEventListener('click', ()=> removeDestination(btn.dataset.code)) );
       }
 
+      // ====== Colar lista (novidade) ======
+      function pasteListHandler(){
+        const text = prompt('Cole IATAs e/ou nomes de aeroportos (separados por vírgula, ponto e vírgula, | ou quebra de linha).');
+        if(!text) return;
+        const parts = text.split(/[\n,;|]+/).map(s=>s.trim()).filter(Boolean);
+        const toAdd = [];
+        const unresolved = [];
+        parts.forEach(seg=>{
+          const codes = seg.toUpperCase().match(/\b[A-Z]{3}\b/g);
+          if (codes && codes.length){
+            codes.forEach(c => toAdd.push(c));
+          } else {
+            const code = resolveToIATA(seg);
+            if (code) toAdd.push(code); else unresolved.push(seg);
+          }
+        });
+        const before = dests.size;
+        toAdd.forEach(c => dests.add(c));
+        renderDestChips(); updateGoState();
+        const added = dests.size - before;
+        if (unresolved.length){
+          $('#status').className='msg warn';
+          const sample = unresolved.slice(0,5).join(', ');
+          $('#status').textContent = `Adicionados ${added}. Não reconhecidos: ${sample}${unresolved.length>5?'…':''}`;
+        } else {
+          $('#status').className='msg ok';
+          $('#status').textContent = `Adicionados ${added} destino(s).`;
+        }
+      }
+
       // ====== Desktop: abre todas as abas no mesmo clique ======
       function preopenShellTabsDesktop(urls, cooldownSec, targets){
         return urls.map((u, idx) => {
@@ -490,7 +521,7 @@ small{color:#666;display:block;margin-top:8px}
     <button id="open1">Abrir próxima aba</button>
     <button id="open3">Abrir 3 abas</button>
   </div>
-  <small>Agendamento preservado: primeira ~${getFirstDelay()}s; intervalo ${cooldownSec}s.</small>
+  <small>Agendamento preservado: primeira ~${getFirstDelay()}s; intervalo ${getCooldown()}s.</small>
   <div id="info"></div>
   <script>
     (function(){
@@ -610,6 +641,7 @@ small{color:#666;display:block;margin-top:8px}
 
         // Inputs & botões
         $('#addDest').addEventListener('click', ()=> addDestination($('#destination').value));
+        $('#pasteList').addEventListener('click', pasteListHandler);
         $('#clearDests').addEventListener('click', clearDestinations);
         $('#stop').addEventListener('click', stopQueue);
         $('#destination').addEventListener('input', updateGoState);
@@ -640,19 +672,18 @@ small{color:#666;display:block;margin-top:8px}
             urls.push( buildLatamURL({ origin, destination: dest, date }) );
           }
 
-          // agenda absoluta: primeira ~3s (mobile), demais no intervalo
+          // agenda absoluta
           const firstDelay = getFirstDelay();
-          const startBase = Date.now() + 300; // leve folga
+          const startBase = Date.now() + 300;
           const targets = urls.map((_, i) => startBase + ((firstDelay + i*cooldownSec) * 1000));
 
           updateOutput({ origin, destinos: destinations, data: date, intervalo_s: cooldownSec, first_delay_s: firstDelay, safari: isSafari(), mobile: isMobile() });
 
           let shells=[];
           if (isSafari()) {
-            shells = openViaLauncherSafari(urls, targets, cooldownSec); // abre via botões (1 ou 3 por toque)
+            shells = openViaLauncherSafari(urls, targets, cooldownSec);
             $('#waitBox').textContent = `Aba lançadora aberta: toque em “Abrir próxima aba” até concluir.`;
           } else if (isMobile()) {
-            // mobile não-Safari: ainda pode bloquear múltiplas; usar lançadora também
             shells = openViaLauncherSafari(urls, targets, cooldownSec);
             $('#waitBox').textContent = `Aba lançadora aberta: use os botões para abrir as abas.`;
           } else {
