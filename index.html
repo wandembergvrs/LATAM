@@ -16,7 +16,7 @@
     h1{ font-size: clamp(1.15rem, 1vw + .9rem, 1.6rem); margin:0 0 12px; font-weight:700; letter-spacing:.2px }
     p.lead{ color:var(--muted); margin:.25rem 0 1rem; }
 
-    .notice{ background:#0b1329; border:1px solid var(--line); border-left:4px solid var(--accent); border-radius:12px; padding:14px 16px; color:#c9d6ff; margin: 12px 0 18px; }
+    .notice{ background:#0b1329; border:1px solid var(--line); border-left:4px solid var(--accent); border-radius:12px; padding:14px 16px; color:#c9d6ff; margin:12px 0 18px; }
     .notice b{ color:#e8eefc }
 
     .grid{ display:grid; gap:16px; grid-template-columns: 1fr; }
@@ -34,8 +34,8 @@
 
     .msg{ margin-top:10px; font-size:.9rem }
     .msg.ok{ color: var(--ok) }
-    .msg.err{ color: var(--err) }
     .msg.warn{ color: var(--warn) }
+    .msg.err{ color: var(--err) }
 
     small.hint{ color: var(--muted); display:block; margin-top:6px }
 
@@ -55,10 +55,10 @@
     .dropdown .opt:last-child{ border-bottom:none }
     .dropdown .opt:hover{ background:#0e1739 }
 
-    .country{ margin-top:16px; border-top:1px dashed var(--line); padding-top:16px }
-    .country .grid2{ display:grid; gap:12px; grid-template-columns: 1fr; }
-    @media (min-width: 1100px){ .country .grid2{ grid-template-columns: 1fr 2fr 1fr; } }
-    #countryAirports{ min-height:240px }
+    .country, .near{ margin-top:16px; border-top:1px dashed var(--line); padding-top:16px }
+    .country .grid2, .near .grid2{ display:grid; gap:12px; grid-template-columns: 1fr; }
+    @media (min-width: 1100px){ .country .grid2, .near .grid2{ grid-template-columns: 1fr 2fr 1fr; } }
+    #countryAirports, #nearList{ min-height:240px }
   </style>
 </head>
 <body>
@@ -123,6 +123,12 @@
             <label for="countrySelect">País</label>
             <select id="countrySelect"></select>
             <small class="hint">Escolha um país para listar seus aeroportos.</small>
+            <div style="margin-top:8px;display:flex;gap:12px;align-items:center">
+              <label style="display:flex;gap:8px;align-items:center;margin:0">
+                <input id="countryIntl" type="checkbox" />
+                Somente internacionais
+              </label>
+            </div>
           </div>
           <div>
             <label for="countryAirports">Aeroportos do país (selecione até 10)</label>
@@ -136,6 +142,56 @@
               <button id="addFromCountry" class="btn btn-ghost" type="button">Adicionar selecionados</button>
               <button id="clearCountrySel" class="btn btn-ghost" type="button">Limpar seleção</button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Seleção por proximidade -->
+      <div class="near">
+        <label><strong>Selecionar por proximidade</strong></label>
+        <div class="grid2">
+          <div>
+            <label for="nearBase">Base (IATA ou nome)</label>
+            <div class="rel">
+              <input id="nearBase" placeholder="Ex.: GRU, Guarulhos, SSA, Salvador..." />
+              <div class="dropdown" id="drop-near" role="listbox" aria-label="Sugestões de base"></div>
+            </div>
+            <small class="hint">Calcula aeroportos mais próximos usando coordenadas.</small>
+            <div style="margin-top:8px;display:flex;gap:12px;align-items:center">
+              <label style="display:flex;gap:8px;align-items:center;margin:0">
+                <input id="nearSameCountry" type="checkbox" checked />
+                Mesmo país
+              </label>
+              <label style="display:flex;gap:8px;align-items:center;margin:0">
+                <input id="nearIntl" type="checkbox" />
+                Somente internacionais
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <div style="display:grid; gap:10px; grid-template-columns: 1fr 1fr 1fr;">
+              <div>
+                <label for="nearRadius">Raio (km)</label>
+                <input id="nearRadius" type="number" min="10" max="2000" step="10" value="200" />
+              </div>
+              <div>
+                <label for="nearMax">Máx. resultados</label>
+                <input id="nearMax" type="number" min="1" max="10" step="1" value="5" />
+              </div>
+              <div style="display:flex;align-items:end"><small class="hint">Deixe raio 0 para pegar os top N.</small></div>
+            </div>
+          </div>
+
+          <div>
+            <label for="nearList">Próximos do base (selecione até 10)</label>
+            <select id="nearList" multiple size="10" aria-label="Aeroportos próximos"></select>
+            <div class="actions">
+              <button id="nearFind" class="btn btn-ghost" type="button">Listar</button>
+              <button id="addNear" class="btn btn-ghost" type="button">Adicionar selecionados</button>
+              <button id="clearNearSel" class="btn btn-ghost" type="button">Limpar seleção</button>
+            </div>
+            <small class="hint">Dica: digite no campo “Base” e pressione Enter.</small>
           </div>
         </div>
       </div>
@@ -168,10 +224,10 @@
       const COOLDOWN_DEFAULT = 15;
       const FIRST_DELAY_MOBILE_SECONDS = 3;
       const LATAM_BASE = 'https://www.latamairlines.com/br/pt/oferta-voos';
-      const USE_EXP_ID = true;
-      const FORCE_WEB_PARAM = { channel: 'web' };
+      const USE_EXP_ID = true;                     // id aleatório por aba
+      const FORCE_WEB_PARAM = { channel: 'web' };  // força web (evita abrir app)
 
-      // Países (ISO2 -> nome PT-BR)
+      // Países (ISO2 -> nome PT-BR) — conjunto básico
       const ISO_TO_PT = {
         BR:'Brasil', AR:'Argentina', CL:'Chile', UY:'Uruguai', PY:'Paraguai', BO:'Bolívia', PE:'Peru',
         CO:'Colômbia', EC:'Equador', VE:'Venezuela', US:'Estados Unidos', CA:'Canadá', MX:'México',
@@ -188,13 +244,14 @@
         'CHINA':'CN','UNITED ARAB EMIRATES':'AE','EMIRADOS ÁRABES UNIDOS':'AE','QATAR':'QA','CATAR':'QA','TURKEY':'TR','TURQUIA':'TR'
       };
 
-      // Fallback offline (BR básico)
+      // Fallback offline (BR básico — com palpite “intl”)
       const BR_IATA = ['GRU','CGH','VCP','GIG','SDU','BSB','CNF','CWB','POA','FLN','REC','FOR','NAT','AJU','VIX','GYN','SLZ','SSA','BEL','MAO'];
-      const FALLBACK_BR = BR_IATA.map(code => ({iata:code, city:'', name:'', country:'BR'}));
+      const BR_INTL_SET = new Set(['GRU','GIG','BSB','CNF','CWB','POA','VCP','REC','FOR','NAT','VIX','SLZ','SSA','BEL','MAO','FLN']); // heurístico
+      const FALLBACK_BR = BR_IATA.map(code => ({iata:code, city:'', name: BR_INTL_SET.has(code)?'International':'' , country:'BR'}));
 
       // Estado
       const $ = (sel, p=document) => p.querySelector(sel);
-      let AIRPORTS = [];            // [{iata,city,name,cc,countryName}]
+      let AIRPORTS = [];            // [{iata,city,name,cc,countryName,lat,lon,intl}]
       let DROPDOWN_ITEMS = [];      // [{label, code}]
       let COUNTRY_LIST = [];        // [{cc, name}]
       let LAST_COUNTRY = 'BR';
@@ -238,6 +295,7 @@
       }
       function upcaseIATA(inp){ inp.addEventListener('input', ()=>{ inp.value = inp.value.replace(/[^a-zA-Z]/g,'').toUpperCase().slice(0,3); updateGoState(); }); }
 
+      // ===== País / airports util =====
       function normalizeCountryFields(a){
         let codeCandidate = (a.iso || a.iso_country || a.country_code || a.country || '').toString().trim();
         let cc = '';
@@ -254,12 +312,30 @@
         if (!name) { name = ISO_TO_PT[cc] || cc; }
         return { cc, name };
       }
+
+      // heurística “internacional”
+      function isIntlName(name=''){
+        const s = (name||'').toUpperCase();
+        return /(INTERNATIONAL|INTERNACIONAL|INTL\.?|INTERNATIONALE|INTERNACIONALE)/.test(s);
+      }
+
       function airportsToInternal(list){
         return list
           .filter(a => a && a.iata && /^[A-Z]{3}$/i.test(a.iata))
           .map(a => {
             const {cc,name:countryName} = normalizeCountryFields(a);
-            return { iata: a.iata.toUpperCase(), city: a.city||'', name: a.name||'', cc, countryName };
+            const lat = Number(a.lat ?? a.latitude ?? a.lat_deg ?? a.lat_decimal ?? NaN);
+            const lon = Number(a.lon ?? a.lng ?? a.longitude ?? a.lon_deg ?? a.long_decimal ?? NaN);
+            const name = a.name || '';
+            return {
+              iata: a.iata.toUpperCase(),
+              city: a.city || '',
+              name,
+              cc, countryName,
+              lat: isFinite(lat) ? lat : null,
+              lon: isFinite(lon) ? lon : null,
+              intl: isIntlName(name)
+            };
           });
       }
       function buildCountryList(list){
@@ -284,15 +360,16 @@
           .filter(a => (a.cc||'').toUpperCase() === code)
           .sort((a,b) => (a.city||'').localeCompare(b.city||'') || (a.name||'').localeCompare(b.name||''));
       }
-      function renderCountryAirports(cc, filterText=''){
+      function renderCountryAirports(cc, filterText='', intlOnly=false){
         const box = $('#countryAirports');
         const q = (filterText||'').toUpperCase().normalize('NFD').replace(/\p{Diacritic}/gu,'');
         const list = airportsByCountry(cc).filter(a=>{
+          if(intlOnly && !a.intl) return false;
           if(!q) return true;
           const s = `${a.iata} ${a.city||''} ${a.name||''}`.toUpperCase().normalize('NFD').replace(/\p{Diacritic}/gu,'');
           return s.includes(q);
         });
-        box.innerHTML = list.map(a => `<option value="${a.iata}">${a.iata} — ${a.city||''}${a.city&&a.name?' • ':''}${a.name||''}</option>`).join('');
+        box.innerHTML = list.map(a => `<option value="${a.iata}">${a.iata} — ${a.city||''}${a.city&&a.name?' • ':''}${a.name||''}${a.intl?' 🌐':''}</option>`).join('');
       }
 
       // ====== Fetch IATAs ======
@@ -308,18 +385,26 @@
         } finally { clearTimeout(timer); }
       }
       function buildDropdownItems(list){
-        return list.map(a => ({ label: `${a.iata} — ${a.city||''}${a.city&&a.name?' • ':''}${a.name||''}`.trim(), code: a.iata }));
+        return list.map(a => ({
+          label: `${a.iata} — ${a.city||''}${a.city&&a.name?' • ':''}${a.name||''}${a.intl?' 🌐':''}`.trim(),
+          code: a.iata
+        }));
       }
       async function loadAirportsWithFallback(){
-        AIRPORTS = airportsToInternal(FALLBACK_BR);
+        // Fallback imediato (BR) — tentar marcar intl por palpite
+        AIRPORTS = airportsToInternal(FALLBACK_BR).map(a=>{
+          if (a.cc==='BR' && BR_INTL_SET.has(a.iata)) a.intl = true;
+          return a;
+        });
         DROPDOWN_ITEMS = buildDropdownItems(AIRPORTS);
         attachDropdown($('#destination'), $('#drop-dest'), DROPDOWN_ITEMS);
+        attachDropdown($('#nearBase'), $('#drop-near'), DROPDOWN_ITEMS);
         const originItems = BR_IATA.map(code => ({label: code, code}));
         attachDropdown($('#origin'), $('#drop-origin'), originItems);
 
         COUNTRY_LIST = buildCountryList(AIRPORTS);
         populateCountrySelect();
-        renderCountryAirports($('#countrySelect').value);
+        renderCountryAirports($('#countrySelect').value, $('#countryFilter').value, $('#countryIntl').checked);
 
         $('#status').className='msg'; $('#status').textContent='Carregando lista global de IATAs…';
         try{
@@ -327,12 +412,13 @@
           AIRPORTS = airportsToInternal(raw);
           DROPDOWN_ITEMS = buildDropdownItems(AIRPORTS);
           attachDropdown($('#destination'), $('#drop-dest'), DROPDOWN_ITEMS);
+          attachDropdown($('#nearBase'), $('#drop-near'), DROPDOWN_ITEMS);
           const originGlobal = AIRPORTS.map(a => ({label: a.iata, code: a.iata}));
           attachDropdown($('#origin'), $('#drop-origin'), originGlobal);
 
           COUNTRY_LIST = buildCountryList(AIRPORTS);
           populateCountrySelect();
-          renderCountryAirports($('#countrySelect').value);
+          renderCountryAirports($('#countrySelect').value, $('#countryFilter').value, $('#countryIntl').checked);
 
           $('#status').className='msg ok'; $('#status').textContent='Lista IATA carregada (CDN).';
         } catch(e){
@@ -342,6 +428,8 @@
 
       // ====== Dropdown manual ======
       function attachDropdown(input, drop, items){
+        // items é um array [{label,code}]
+        let data = items || [];
         const show = (arr) => {
           if(!arr.length){ drop.style.display='none'; return; }
           drop.innerHTML = arr.slice(0,80).map(it => `<div class="opt" data-code="${it.code}">${it.label}</div>`).join('');
@@ -356,14 +444,14 @@
             });
           });
         };
-        input.addEventListener('focus', ()=> show(items));
+        input.addEventListener('focus', ()=> show(data));
         input.addEventListener('input', ()=>{
           const q = input.value.toUpperCase().normalize('NFD').replace(/\p{Diacritic}/gu,'');
-          const filtered = items.filter(it => {
+          const filtered = data.filter(it => {
             const norm = it.label.toUpperCase().normalize('NFD').replace(/\p{Diacritic}/gu,'');
             return norm.includes(q);
           });
-          show((q && filtered.length) ? filtered : items);
+          show((q && filtered.length) ? filtered : data);
           updateGoState();
         });
         input.addEventListener('blur', ()=> setTimeout(()=> drop.style.display='none', 180));
@@ -402,6 +490,23 @@
         return { ok:true, msg:'' };
       }
 
+      // ====== Distância (haversine) ======
+      const R_KM = 6371;
+      const toRad = d => d * Math.PI / 180;
+      function haversineKm(a, b){
+        if (a.lat==null || a.lon==null || b.lat==null || b.lon==null) return Infinity;
+        const dLat = toRad(b.lat - a.lat);
+        const dLon = toRad(b.lon - a.lon);
+        const la1 = toRad(a.lat), la2 = toRad(b.lat);
+        const h = Math.sin(dLat/2)**2 + Math.cos(la1)*Math.cos(la2)*Math.sin(dLon/2)**2;
+        return 2 * R_KM * Math.asin(Math.min(1, Math.sqrt(h)));
+      }
+      function getAirportByIATA(code){
+        const c = (code||'').toUpperCase();
+        return AIRPORTS.find(x => x.iata === c) || null;
+      }
+
+      // ====== URL LATAM ======
       const uuidv4 = ()=> window.crypto && crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random()*16|0, v = c==='x'?r:(r&0x3|0x8); return v.toString(16); });
       function buildLatamURL({ origin, destination, date }){
         const [y,m,d] = date.split('-').map(Number);
@@ -444,7 +549,7 @@
         box.querySelectorAll('.rm').forEach(btn=> btn.addEventListener('click', ()=> removeDestination(btn.dataset.code)) );
       }
 
-      // ====== Colar lista (novidade) ======
+      // ====== Colar lista ======
       function pasteListHandler(){
         const text = prompt('Cole IATAs e/ou nomes de aeroportos (separados por vírgula, ponto e vírgula, | ou quebra de linha).');
         if(!text) return;
@@ -474,7 +579,94 @@
         }
       }
 
-      // ====== Desktop: abre todas as abas no mesmo clique ======
+      // ====== País (até 10) ======
+      function addSelectedCountryAirports(){
+        const box = $('#countryAirports');
+        const selected = Array.from(box.selectedOptions).slice(0,10).map(o => o.value.toUpperCase());
+        if(selected.length === 0){
+          $('#status').className='msg err'; $('#status').textContent='Selecione até 10 aeroportos no combo do país.'; return;
+        }
+        selected.forEach(code => dests.add(code));
+        renderDestChips(); updateGoState();
+        $('#status').className='msg ok'; $('#status').textContent=`Adicionados ${selected.length} aeroporto(s) do país ${$('#countrySelect').value}.`;
+      }
+      function enforceCountrySelectLimit(){
+        const box = $('#countryAirports');
+        const sel = Array.from(box.selectedOptions);
+        if(sel.length > 10){
+          Array.from(box.options).forEach(o => o.selected = false);
+          sel.slice(0,10).forEach(o => o.selected = true);
+          $('#status').className='msg err';
+          $('#status').textContent='Limite de 10 aeroportos por seleção atingido.';
+        }
+      }
+
+      // ====== Proximidade ======
+      function renderNearList(list){
+        const box = $('#nearList');
+        box.innerHTML = list.map(item => {
+          const label = `${item.iata} — ${item.city||''}${item.city&&item.name?' • ':''}${item.name||''} (${item.dist.toFixed(0)} km)${item.intl?' 🌐':''}`;
+          return `<option value="${item.iata}">${label}</option>`;
+        }).join('');
+      }
+      function findNearby(){
+        const baseText = $('#nearBase').value;
+        const baseIata = resolveToIATA(baseText);
+        if (!baseIata){
+          $('#status').className='msg err';
+          $('#status').textContent='Informe a base (IATA ou nome) para calcular proximidade.';
+          return;
+        }
+        const baseApt = getAirportByIATA(baseIata);
+        if (!baseApt){
+          $('#status').className='msg err';
+          $('#status').textContent=`Base ${baseIata} não encontrada.`;
+          return;
+        }
+        if (baseApt.lat==null || baseApt.lon==null){
+          $('#status').className='msg err';
+          $('#status').textContent='Proximidade requer a lista global (CDN) com coordenadas. Tente novamente após carregar.';
+          return;
+        }
+        let radius = parseInt($('#nearRadius').value, 10);
+        const maxN   = Math.max(1, Math.min(10, parseInt($('#nearMax').value, 10) || 5));
+        const sameCC = $('#nearSameCountry').checked;
+        const intlOnly = $('#nearIntl').checked;
+
+        const withDist = AIRPORTS
+          .filter(a => a.iata !== baseApt.iata && a.lat!=null && a.lon!=null && (!sameCC || a.cc === baseApt.cc) && (!intlOnly || a.intl))
+          .map(a => ({...a, dist: haversineKm(baseApt, a)}))
+          .sort((x,y)=> x.dist - y.dist);
+
+        let picked;
+        if (!radius || radius <= 0){
+          picked = withDist.slice(0, maxN);
+        } else {
+          picked = withDist.filter(x => x.dist <= radius).slice(0, maxN);
+        }
+
+        renderNearList(picked);
+        if (picked.length === 0){
+          $('#status').className='msg warn';
+          $('#status').textContent='Nenhum aeroporto encontrado com os filtros. Aumente o raio, desmarque “Mesmo país” ou “Somente internacionais”.';
+        } else {
+          $('#status').className='msg ok';
+          $('#status').textContent=`Encontrados ${picked.length} aeroporto(s) próximos de ${baseApt.iata}.`;
+        }
+      }
+      function addNearSelected(){
+        const box = $('#nearList');
+        const selected = Array.from(box.selectedOptions).slice(0,10).map(o => o.value.toUpperCase());
+        if(selected.length === 0){
+          $('#status').className='msg err'; $('#status').textContent='Selecione até 10 aeroportos na lista de proximidade.'; return;
+        }
+        selected.forEach(code => dests.add(code));
+        renderDestChips(); updateGoState();
+        $('#status').className='msg ok';
+        $('#status').textContent=`Adicionados ${selected.length} aeroporto(s) por proximidade.`;
+      }
+
+      // ==== Desktop: abre todas as abas direto ====
       function preopenShellTabsDesktop(urls, cooldownSec, targets){
         return urls.map((u, idx) => {
           const delaySec = Math.max(0, Math.ceil((targets[idx] - Date.now())/1000));
@@ -497,7 +689,7 @@
         });
       }
 
-      // ====== Mobile/Safari: aba lançadora com abertura em lotes ======
+      // ==== Mobile/Safari: aba lançadora com abertura em lotes ====
       function openViaLauncherSafari(urls, targets, cooldownSec){
         const launcher = window.open('', '_blank');
         if (!launcher) return [];
@@ -614,32 +806,20 @@ small{color:#666;display:block;margin-top:8px}
         loadAirportsWithFallback();
 
         // País
-        $('#countrySelect').addEventListener('change', (e)=>{ LAST_COUNTRY = e.target.value; renderCountryAirports(LAST_COUNTRY, $('#countryFilter').value); });
-        $('#countryFilter').addEventListener('input', ()=> renderCountryAirports($('#countrySelect').value, $('#countryFilter').value));
-        $('#countryAirports').addEventListener('change', ()=> {
-          const box = $('#countryAirports');
-          const sel = Array.from(box.selectedOptions);
-          if(sel.length > 10){
-            Array.from(box.options).forEach(o => o.selected = false);
-            sel.slice(0,10).forEach(o => o.selected = true);
-            $('#status').className='msg err';
-            $('#status').textContent='Limite de 10 aeroportos por seleção atingido.';
-          }
-        });
-        $('#addFromCountry').addEventListener('click', ()=>{
-          const box = $('#countryAirports');
-          const selected = Array.from(box.selectedOptions).slice(0,10).map(o => o.value.toUpperCase());
-          if(selected.length === 0){
-            $('#status').className='msg err'; $('#status').textContent='Selecione até 10 aeroportos no combo do país.'; return;
-          }
-          selected.forEach(code => dests.add(code));
-          renderDestChips();
-          $('#status').className='msg ok'; $('#status').textContent=`Adicionados ${selected.length} aeroporto(s).`;
-          updateGoState();
-        });
+        $('#countrySelect').addEventListener('change', (e)=>{ LAST_COUNTRY = e.target.value; renderCountryAirports(LAST_COUNTRY, $('#countryFilter').value, $('#countryIntl').checked); });
+        $('#countryFilter').addEventListener('input', ()=> renderCountryAirports($('#countrySelect').value, $('#countryFilter').value, $('#countryIntl').checked));
+        $('#countryIntl').addEventListener('change', ()=> renderCountryAirports($('#countrySelect').value, $('#countryFilter').value, $('#countryIntl').checked));
+        $('#countryAirports').addEventListener('change', enforceCountrySelectLimit);
+        $('#addFromCountry').addEventListener('click', addSelectedCountryAirports);
         $('#clearCountrySel').addEventListener('click', ()=>{ Array.from($('#countryAirports').options).forEach(o=>o.selected=false); });
 
-        // Inputs & botões
+        // Proximidade
+        $('#nearFind').addEventListener('click', findNearby);
+        $('#addNear').addEventListener('click', addNearSelected);
+        $('#clearNearSel').addEventListener('click', ()=>{ Array.from($('#nearList').options).forEach(o=>o.selected=false); });
+        $('#nearBase').addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); findNearby(); } });
+
+        // Inputs & botões gerais
         $('#addDest').addEventListener('click', ()=> addDestination($('#destination').value));
         $('#pasteList').addEventListener('click', pasteListHandler);
         $('#clearDests').addEventListener('click', clearDestinations);
@@ -707,8 +887,9 @@ small{color:#666;display:block;margin-top:8px}
           $('#status').textContent=''; $('#waitBox').textContent='';
           $('#stop').disabled=true; clearDestinations();
           $('#countryFilter').value='';
-          renderCountryAirports($('#countrySelect').value, '');
+          renderCountryAirports($('#countrySelect').value, '', $('#countryIntl').checked);
           Array.from($('#countryAirports').options).forEach(o=>o.selected=false);
+          $('#nearBase').value=''; $('#nearList').innerHTML='';
           updateGoState();
         });
 
@@ -738,6 +919,8 @@ small{color:#666;display:block;margin-top:8px}
           tassert('destination=SCL', sp.get('destination')==='SCL');
           tassert('outbound=2025-10-11T15:00:00.000Z', sp.get('outbound')==='2025-10-11T15:00:00.000Z');
         }catch(e){ tassert('Parsing URL exemplo', false); }
+        // Haversine sanidade (~GRU-CGH ~20km)
+        (function(){ const gru={lat:-23.43,lon:-46.47}, cgh={lat:-23.63,lon:-46.66}; const d=haversineKm(gru,cgh); tassert('haversine numérico', isFinite(d) && d>10 && d<40); })();
       }
     }
   </script>
