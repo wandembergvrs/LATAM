@@ -18,8 +18,6 @@
 
     .notice{ background:#0b1329; border:1px solid var(--line); border-left:4px solid var(--accent); border-radius:12px; padding:14px 16px; color:#c9d6ff; margin: 12px 0 18px; }
     .notice b{ color:#e8eefc }
-    .notice ol{ margin:.4rem 0 0 1rem; padding:0 }
-    .notice li{ margin:.25rem 0 }
 
     .grid{ display:grid; gap:16px; grid-template-columns: 1fr; }
     @media (min-width: 1100px){ .grid{ grid-template-columns: 1fr 1fr 1fr 1fr; } }
@@ -38,7 +36,7 @@
     .msg.ok{ color: var(--ok) }
     .msg.err{ color: var(--err) }
 
-    small.hint{ color:var(--muted); display:block; margin-top:6px }
+    small.hint{ color: var(--muted); display:block; margin-top:6px }
 
     details.testpanel{ margin-top:18px; border-top:1px dashed var(--line); padding-top:14px }
     .test-pass{ color: var(--ok) }
@@ -66,15 +64,15 @@
   <div class="wrap">
     <div class="card">
       <h1 id="titleH1">Busca de voos LATAM — múltiplos destinos (<span id="ivTitle">15</span>s entre cada)</h1>
-      <p class="lead">Selecione <strong>origem</strong>, <strong>destino(s)</strong> (pode digitar o <strong>nome completo</strong> do destino) e a <strong>data</strong>.</p>
+      <p class="lead">Selecione <strong>origem</strong>, <strong>destino(s)</strong> (nome completo ou IATA) e a <strong>data</strong>.</p>
 
       <div class="notice" role="note" aria-label="Como funciona">
         <b>Como funciona & pré-requisitos</b>
         <ol>
           <li><b>Faça login</b> na LATAM em outra aba antes de usar (obrigatório).</li>
           <li>Autorize <b>pop-ups</b> para este site.</li>
-          <li>No <b>celular</b>, abrimos abas do <b>navegador</b> (não do app). <u>A primeira navegação aguarda ~3s</u> para garantir que todas as abas sejam abertas.</li>
-          <li>Ao clicar em <b>Buscar</b>, criamos <i>abas de espera</i> (about:blank) que <b>auto-navegam a cada <span id="iv">15</span>s</b> (3s + 0·iv, 3s + 1·iv, 3s + 2·iv, ... no celular).</li>
+          <li>No <b>celular</b>, toque em <b>Abrir X abas</b> na aba lançadora para iniciar as buscas. <i>A 1ª espera ~3s.</i></li>
+          <li>Criamos <b>abas de espera</b> que se abrem sozinhas em intervalos.</li>
         </ol>
       </div>
 
@@ -115,6 +113,7 @@
         </div>
       </div>
 
+      <!-- Seleção por país (até 10) -->
       <div class="country">
         <label><strong>Selecionar por país (até 10 aeroportos)</strong></label>
         <div class="grid2">
@@ -164,14 +163,13 @@
       window.__LATAM_WIDGET_INIT__ = true;
 
       // ====== CONFIG ======
-      const COOLDOWN_DEFAULT = 15;                 // intervalo padrão entre abas
-      const FIRST_DELAY_MOBILE_SECONDS = 3;        // atraso inicial no celular (para abrir todas as abas)
+      const COOLDOWN_DEFAULT = 15;
+      const FIRST_DELAY_MOBILE_SECONDS = 3;
       const LATAM_BASE = 'https://www.latamairlines.com/br/pt/oferta-voos';
-      const SUGGEST_ONLY_BR = false;               // true => sugere só BR
-      const USE_EXP_ID = true;                     // true => inclui exp_id aleatório
-      const FORCE_WEB_PARAM = { channel: 'web' };  // parâmetro neutro p/ reforçar web
+      const USE_EXP_ID = true;
+      const FORCE_WEB_PARAM = { channel: 'web' };
 
-      // Países (ISO2 -> nome PT-BR)
+      // Países (ISO2 -> nome PT-BR) — mínimo necessário
       const ISO_TO_PT = {
         BR:'Brasil', AR:'Argentina', CL:'Chile', UY:'Uruguai', PY:'Paraguai', BO:'Bolívia', PE:'Peru',
         CO:'Colômbia', EC:'Equador', VE:'Venezuela', US:'Estados Unidos', CA:'Canadá', MX:'México',
@@ -190,7 +188,7 @@
 
       // Fallback offline (BR básico)
       const BR_IATA = ['GRU','CGH','VCP','GIG','SDU','BSB','CNF','CWB','POA','FLN','REC','FOR','NAT','AJU','VIX','GYN','SLZ','SSA','BEL','MAO'];
-      const FALLBACK_BR = BR_IATA.map(code => ({iata:code, city:'', name:'', cc:'BR'}));
+      const FALLBACK_BR = BR_IATA.map(code => ({iata:code, city:'', name:'', country:'BR'}));
 
       // Estado
       const $ = (sel, p=document) => p.querySelector(sel);
@@ -232,11 +230,8 @@
         if(!$('#date').value) $('#date').value = iso;
       }
       function upcaseIATA(inp){ inp.addEventListener('input', ()=>{ inp.value = inp.value.replace(/[^a-zA-Z]/g,'').toUpperCase().slice(0,3); updateGoState(); }); }
-      function fillDatalist(list){
-        const dl = document.getElementById('airportsBR');
-        if (!dl) return;
-        dl.innerHTML = list.map(a => `<option value="${a.iata}">${a.iata} — ${a.city||''} (${a.name||''})</option>`).join('');
-      }
+
+      // ===== País / airports util =====
       function normalizeCountryFields(a){
         let codeCandidate = (a.iso || a.iso_country || a.country_code || a.country || '').toString().trim();
         let cc = '';
@@ -264,7 +259,7 @@
       function buildCountryList(list){
         const map = new Map(); // cc -> name
         list.forEach(a => {
-          const cc = (a.cc||'').toUpperCase();
+          const cc = (a.cc||a.country||'').toString().toUpperCase();
           if (!cc) return;
           if (!map.has(cc)) map.set(cc, a.countryName || ISO_TO_PT[cc] || cc);
         });
@@ -312,7 +307,6 @@
           code: a.iata
         }));
       }
-
       async function loadAirportsWithFallback(){
         // Fallback imediato (BR)
         AIRPORTS = airportsToInternal(FALLBACK_BR);
@@ -353,7 +347,7 @@
           drop.querySelectorAll('.opt').forEach(el => {
             el.addEventListener('mousedown', (e)=>{
               const code = e.currentTarget.getAttribute('data-code');
-              input.value = code; // preenche com IATA
+              input.value = code;
               input.dispatchEvent(new Event('input'));
               drop.style.display='none';
               if(input.id==='destination'){ addDestination(code); }
@@ -393,7 +387,7 @@
 
       // ====== Validação ======
       function isTodayOrFuture(ymd){
-        const {y,m,d} = parseYMD(ymd);
+        const [y,m,d] = ymd.split('-').map(Number);
         const sel = new Date(y, m-1, d, 0, 0, 0, 0);
         const today = new Date(); today.setHours(0,0,0,0);
         return sel >= today;
@@ -406,11 +400,9 @@
         return { ok:true, msg:'' };
       }
 
-      const parseYMD = (s)=>{ const [y,m,d] = s.split('-').map(Number); return { y, m, d }; };
       const uuidv4 = ()=> window.crypto && crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random()*16|0, v = c==='x'?r:(r&0x3|0x8); return v.toString(16); });
-
       function buildLatamURL({ origin, destination, date }){
-        const { y, m, d } = parseYMD(date);
+        const [y,m,d] = date.split('-').map(Number);
         const outboundISO = new Date(Date.UTC(y, m-1, d, 15, 0, 0)).toISOString();
         const params = {
           origin: origin.toUpperCase(),
@@ -443,7 +435,6 @@
       }
       const removeDestination = (code)=>{ dests.delete(code); renderDestChips(); updateGoState(); };
       const clearDestinations = ()=>{ dests.clear(); renderDestChips(); updateGoState(); };
-
       function renderDestChips(){
         const box = $('#destChips'); if(!box) return;
         if(dests.size===0){ box.innerHTML = '<span class="hint">(Nenhum destino adicionado)</span>'; return; }
@@ -451,7 +442,7 @@
         box.querySelectorAll('.rm').forEach(btn=> btn.addEventListener('click', ()=> removeDestination(btn.dataset.code)) );
       }
 
-      // ====== Seleção por país (até 10) ======
+      // ====== País (até 10) ======
       function addSelectedCountryAirports(){
         const box = $('#countryAirports');
         const selected = Array.from(box.selectedOptions).slice(0,10).map(o => o.value.toUpperCase());
@@ -474,52 +465,95 @@
         }
       }
 
-      // ==== Pré-abertura de abas — cada aba se auto-navega (meta refresh) ====
-      function preopenShellTabs(urls, cooldownSec){
-        const firstDelay = getFirstDelay(); // 3s no mobile, 0s no desktop
+      // ==== Desktop: abre todas as abas direto (mesmo clique) ====
+      function preopenShellTabsDesktop(urls, cooldownSec){
         return urls.map((u, idx) => {
-          const delaySec = firstDelay + (idx * cooldownSec); // ex.: 3s, 3+iv, 3+2·iv...
-          const w = window.open('about:blank', '_blank'); // mantém no navegador
+          const delaySec = idx * cooldownSec;
+          const w = window.open('about:blank', '_blank');
           if (w && w.document) {
             try {
               const uAttr = u.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-              const title = `Agendado (${delaySec}s)`;
-              const body  = `Esta aba abrirá automaticamente em ${delaySec}s.`;
               const html = `<!doctype html><html><head><meta charset="utf-8">
-<title>${title}</title>
+<title>Agendado (${delaySec}s)</title>
 <meta http-equiv="refresh" content="${delaySec};url=${uAttr}">
-<meta name="referrer" content="no-referrer">
-<style>body{font-family:system-ui,Segoe UI,Roboto,Arial;padding:24px;color:#111}
-a{color:#2563eb;text-decoration:none;border-bottom:1px solid rgba(37,99,235,.4)}</style>
-</head><body>
-  <h3>${title}</h3>
-  <p style="color:#666">${body}</p>
-  <p><a href="${uAttr}" rel="noopener">Ir agora</a></p>
-  <script>
-    (function(){
-      var ms = ${delaySec} * 1000;
-      var url = "${u.replace(/"/g,'\\"')}";
-      if (ms <= 0) { try{ location.replace(url); }catch(e){}; return; }
-      setTimeout(function(){ try{ location.replace(url); }catch(e){} }, ms + 50);
-    })();
-  <\/script>
+<style>body{font-family:system-ui,Segoe UI,Roboto,Arial;padding:24px;color:#111}</style>
+</head><body><p style="color:#666">Abrirá automaticamente em ${delaySec}s…</p>
+<script>(function(){var ms=${delaySec}*1000,u="${u.replace(/"/g,'\\"')}";if(ms<=0){try{location.replace(u)}catch(e){};return}setTimeout(function(){try{location.replace(u)}catch(e){}},ms+50)})();<\/script>
 </body></html>`;
               w.document.open(); w.document.write(html); w.document.close();
-            } catch (e) { /* ignore */ }
+            } catch (e) {}
           }
           return w;
         });
       }
 
-      function runQueueWithShells(urls, shells, cooldownSec){
+      // ==== Mobile: 1 aba lançadora com botão (2º toque) abre todas as abas ====
+      function openViaMobileLauncher(urls, cooldownSec){
+        const firstDelay = getFirstDelay(); // >=3s
+        const launcher = window.open('', '_blank');
+        if (!launcher) return [];
+
+        const urlsJSON = JSON.stringify(urls);
+        const html = `<!doctype html><html><head><meta charset="utf-8">
+<title>Lançador de buscas</title>
+<meta name="referrer" content="no-referrer">
+<style>
+body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;padding:24px;color:#111;background:#f7f7fb}
+h2{margin:0 0 12px} p{margin:0 0 12px;color:#444}
+button{font-size:16px;padding:12px 16px;border-radius:12px;border:1px solid #dde;cursor:pointer;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+small{color:#666;display:block;margin-top:8px}
+</style></head><body>
+  <h2>Pronto para abrir as abas</h2>
+  <p>Toque no botão abaixo para iniciar as buscas no navegador.</p>
+  <button id="goAll">Abrir <span id="qty"></span> abas agora</button>
+  <small>Primeira navegação ~${firstDelay}s; intervalo ${cooldownSec}s.</small>
+  <p id="msg" style="margin-top:12px;color:#2563eb"></p>
+  <script>
+    (function(){
+      var URLS = ${urlsJSON};
+      document.getElementById('qty').textContent = URLS.length;
+      function mk(u, delaySec){
+        var w = window.open('about:blank','_blank'); if(!w) return false;
+        try{
+          var uAttr = u.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+          var html = '<!doctype html><html><head><meta charset="utf-8"><title>Agendado ('+delaySec+'s)</title>'+
+                     '<meta http-equiv="refresh" content="'+delaySec+';url='+uAttr+'">'+
+                     '<meta name="referrer" content="no-referrer">'+
+                     '<style>body{font-family:system-ui,Segoe UI,Roboto,Arial;padding:24px;color:#111}</style></head><body>'+
+                     '<p style="color:#666">Abrirá automaticamente em '+delaySec+'s…</p>'+
+                     '<script>(function(){var ms='+delaySec+'*1000,u="'+u.replace(/"/g,'\\\\"')+'";if(ms<=0){try{location.replace(u)}catch(e){};return}setTimeout(function(){try{location.replace(u)}catch(e){}},ms+50)})();<\\/script>'+
+                     '</body></html>';
+          w.document.open(); w.document.write(html); w.document.close();
+        }catch(e){}
+        return true;
+      }
+      function openAll(){
+        var ok=true, iv=${cooldownSec}, base=${firstDelay};
+        URLS.forEach(function(u,i){ if(!mk(u, base + i*iv)) ok=false; });
+        document.getElementById('msg').textContent = ok ? 'Abas abertas. Você pode fechar esta janela.' : 'Algumas abas foram bloqueadas pelo navegador.';
+      }
+      document.getElementById('goAll').addEventListener('click', openAll);
+    })();
+  <\/script>
+</body></html>`;
+        try { launcher.document.open(); launcher.document.write(html); launcher.document.close(); } catch(e){}
+        return [launcher]; // devolve pelo menos a lançadora para controle
+      }
+
+      function runQueueWithShells(urls, shells, cooldownSec, mobile){
         queueShells = shells.slice();
         if (queueShells.some(w => !w)) {
           $('#status').className = 'msg err';
           $('#status').textContent = 'Pop-ups bloqueados. Habilite pop-ups e tente novamente.';
           return;
         }
-        $('#waitBox').textContent = `Abas agendadas: abrirão automaticamente (primeira em ${getFirstDelay()}s; intervalo ${cooldownSec}s).`;
-        $('#stop').disabled = false;
+        if (mobile) {
+          $('#waitBox').textContent = `Nova aba lançadora aberta: toque em “Abrir ${urls.length} abas” para iniciar.`;
+          $('#stop').disabled = false;
+        } else {
+          $('#waitBox').textContent = `Abas agendadas: abrirão automaticamente (intervalo ${cooldownSec}s).`;
+          $('#stop').disabled = false;
+        }
       }
 
       function stopQueue(){
@@ -556,9 +590,9 @@ a{color:#2563eb;text-decoration:none;border-bottom:1px solid rgba(37,99,235,.4)}
 
         upcaseIATA($('#origin'));
         renderDestChips();
-        loadAirportsWithFallback();
 
         // País
+        loadAirportsWithFallback();
         $('#countrySelect').addEventListener('change', (e)=>{ LAST_COUNTRY = e.target.value; renderCountryAirports(LAST_COUNTRY, $('#countryFilter').value); });
         $('#countryFilter').addEventListener('input', ()=> renderCountryAirports($('#countrySelect').value, $('#countryFilter').value));
         $('#countryAirports').addEventListener('change', enforceCountrySelectLimit);
@@ -593,15 +627,21 @@ a{color:#2563eb;text-decoration:none;border-bottom:1px solid rgba(37,99,235,.4)}
             urls.push( buildLatamURL({ origin, destination: dest, date }) );
           }
 
-          updateOutput({ origin, destinos: destinations, data: date, intervalo_s: cooldownSec, first_delay_s: getFirstDelay(), mobile: isMobileUA() });
+          updateOutput({ origin, destinos: destinations, data: date, intervalo_s: cooldownSec, mobile: isMobileUA(), first_delay_s: getFirstDelay() });
 
-          const shells = preopenShellTabs(urls, cooldownSec);
-          if(shells.some(w=>!w)){
+          let shells=[];
+          if (isMobileUA()) {
+            shells = openViaMobileLauncher(urls, cooldownSec); // botão “Abrir X abas” dentro da lançadora
+          } else {
+            shells = preopenShellTabsDesktop(urls, cooldownSec);
+          }
+
+          if(shells.length===0 || shells.some(w=>!w)){
             $('#status').className='msg err';
             $('#status').textContent='Pop-ups bloqueados. Permita pop-ups e clique novamente.';
             return;
           }
-          runQueueWithShells(urls, shells, cooldownSec);
+          runQueueWithShells(urls, shells, cooldownSec, isMobileUA());
         });
 
         // Limpar
@@ -617,7 +657,6 @@ a{color:#2563eb;text-decoration:none;border-bottom:1px solid rgba(37,99,235,.4)}
           updateGoState();
         });
 
-        // Estado inicial do botão
         updateGoState();
         runSelfTests();
       }
@@ -631,7 +670,6 @@ a{color:#2563eb;text-decoration:none;border-bottom:1px solid rgba(37,99,235,.4)}
         div.textContent=(cond?'✔ ':'✘ ')+name;
         document.getElementById('testReport').appendChild(div);
       }
-
       function runSelfTests(){
         const panel = document.getElementById('testPanel'); if(panel) panel.open=false;
         tassert('Intervalo mínimo = 3', (function(){ const el=document.getElementById('interval'); return el && el.min==='3'; })());
@@ -645,7 +683,6 @@ a{color:#2563eb;text-decoration:none;border-bottom:1px solid rgba(37,99,235,.4)}
           tassert('destination=SCL', sp.get('destination')==='SCL');
           tassert('outbound=2025-10-11T15:00:00.000Z', sp.get('outbound')==='2025-10-11T15:00:00.000Z');
         }catch(e){ tassert('Parsing URL exemplo', false); }
-        tassert('Atraso inicial mobile >= 3s', (function(){ var d = (typeof getFirstDelay==='function') ? getFirstDelay() : 0; return (isMobileUA() ? d>=3 : d===0); })());
       }
     }
   </script>
