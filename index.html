@@ -71,7 +71,7 @@
         <ol>
           <li><b>Faça login</b> na LATAM em outra aba antes de usar (obrigatório).</li>
           <li>Autorize <b>pop-ups</b> para este site.</li>
-          <li>No <b>celular</b>, toque em <b>Abrir X abas</b> na aba lançadora para iniciar as buscas. <i>A 1ª espera ~3s.</i></li>
+          <li>No <b>celular/Safari</b>, uma <b>aba lançadora</b> aparece; toque em <b>Abrir próxima aba</b> (ou “Abrir 3 abas”).</li>
           <li>Criamos <b>abas de espera</b> que se abrem sozinhas em intervalos.</li>
         </ol>
       </div>
@@ -163,13 +163,13 @@
       window.__LATAM_WIDGET_INIT__ = true;
 
       // ====== CONFIG ======
-      const COOLDOWN_DEFAULT = 15;
-      const FIRST_DELAY_MOBILE_SECONDS = 3;
+      const COOLDOWN_DEFAULT = 15;                 // intervalo padrão entre abas
+      const FIRST_DELAY_MOBILE_SECONDS = 3;        // atraso inicial em mobile/safari (garante abrir todas)
       const LATAM_BASE = 'https://www.latamairlines.com/br/pt/oferta-voos';
-      const USE_EXP_ID = true;
-      const FORCE_WEB_PARAM = { channel: 'web' };
+      const USE_EXP_ID = true;                     // id aleatório por aba
+      const FORCE_WEB_PARAM = { channel: 'web' };  // reforça web
 
-      // Países (ISO2 -> nome PT-BR) — mínimo necessário
+      // Países (ISO2 -> nome PT-BR) — conjunto básico
       const ISO_TO_PT = {
         BR:'Brasil', AR:'Argentina', CL:'Chile', UY:'Uruguai', PY:'Paraguai', BO:'Bolívia', PE:'Peru',
         CO:'Colômbia', EC:'Equador', VE:'Venezuela', US:'Estados Unidos', CA:'Canadá', MX:'México',
@@ -199,10 +199,17 @@
       let queueShells = [];
       const dests = new Set();
 
-      // ===== Helpers =====
-      function isMobileUA(){
+      // ===== Helpers UA =====
+      function isMobile(){
         return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
       }
+      function isSafari(){
+        const ua = navigator.userAgent;
+        const vendor = navigator.vendor;
+        return /Safari/.test(ua) && /Apple/.test(vendor || '') && !/CriOS|FxiOS|EdgiOS|OPiOS|Chrome|Android/i.test(ua);
+      }
+
+      // ===== Helpers gerais =====
       function getCooldown(){
         const el = $('#interval');
         const min = parseInt(el.min,10) || 3;
@@ -213,9 +220,7 @@
         el.value = String(v);
         return v;
       }
-      function getFirstDelay(){
-        return isMobileUA() ? Math.max(3, FIRST_DELAY_MOBILE_SECONDS) : 0;
-      }
+      function getFirstDelay(){ return (isMobile() ? Math.max(3, FIRST_DELAY_MOBILE_SECONDS) : 0); }
       function updateIntervalTexts(){
         const v = getCooldown();
         ['iv','iv2','ivTitle'].forEach(id => { const s = document.getElementById(id); if(s) s.textContent = String(v); });
@@ -257,7 +262,7 @@
           });
       }
       function buildCountryList(list){
-        const map = new Map(); // cc -> name
+        const map = new Map();
         list.forEach(a => {
           const cc = (a.cc||a.country||'').toString().toUpperCase();
           if (!cc) return;
@@ -302,13 +307,9 @@
         } finally { clearTimeout(timer); }
       }
       function buildDropdownItems(list){
-        return list.map(a => ({
-          label: `${a.iata} — ${a.city||''}${a.city&&a.name?' • ':''}${a.name||''}`.trim(),
-          code: a.iata
-        }));
+        return list.map(a => ({ label: `${a.iata} — ${a.city||''}${a.city&&a.name?' • ':''}${a.name||''}`.trim(), code: a.iata }));
       }
       async function loadAirportsWithFallback(){
-        // Fallback imediato (BR)
         AIRPORTS = airportsToInternal(FALLBACK_BR);
         DROPDOWN_ITEMS = buildDropdownItems(AIRPORTS);
         attachDropdown($('#destination'), $('#drop-dest'), DROPDOWN_ITEMS);
@@ -442,33 +443,10 @@
         box.querySelectorAll('.rm').forEach(btn=> btn.addEventListener('click', ()=> removeDestination(btn.dataset.code)) );
       }
 
-      // ====== País (até 10) ======
-      function addSelectedCountryAirports(){
-        const box = $('#countryAirports');
-        const selected = Array.from(box.selectedOptions).slice(0,10).map(o => o.value.toUpperCase());
-        if(selected.length === 0){
-          $('#status').className='msg err'; $('#status').textContent='Selecione até 10 aeroportos no combo do país.'; return;
-        }
-        selected.forEach(code => dests.add(code));
-        renderDestChips();
-        $('#status').className='msg ok'; $('#status').textContent=`Adicionados ${selected.length} aeroporto(s) do país ${$('#countrySelect').value}.`;
-        updateGoState();
-      }
-      function enforceCountrySelectLimit(){
-        const box = $('#countryAirports');
-        const sel = Array.from(box.selectedOptions);
-        if(sel.length > 10){
-          Array.from(box.options).forEach(o => o.selected = false);
-          sel.slice(0,10).forEach(o => o.selected = true);
-          $('#status').className='msg err';
-          $('#status').textContent='Limite de 10 aeroportos por seleção atingido.';
-        }
-      }
-
-      // ==== Desktop: abre todas as abas direto (mesmo clique) ====
-      function preopenShellTabsDesktop(urls, cooldownSec){
+      // ====== Desktop: abre todas as abas no mesmo clique ======
+      function preopenShellTabsDesktop(urls, cooldownSec, targets){
         return urls.map((u, idx) => {
-          const delaySec = idx * cooldownSec;
+          const delaySec = Math.max(0, Math.ceil((targets[idx] - Date.now())/1000));
           const w = window.open('about:blank', '_blank');
           if (w && w.document) {
             try {
@@ -476,6 +454,7 @@
               const html = `<!doctype html><html><head><meta charset="utf-8">
 <title>Agendado (${delaySec}s)</title>
 <meta http-equiv="refresh" content="${delaySec};url=${uAttr}">
+<meta name="referrer" content="no-referrer">
 <style>body{font-family:system-ui,Segoe UI,Roboto,Arial;padding:24px;color:#111}</style>
 </head><body><p style="color:#666">Abrirá automaticamente em ${delaySec}s…</p>
 <script>(function(){var ms=${delaySec}*1000,u="${u.replace(/"/g,'\\"')}";if(ms<=0){try{location.replace(u)}catch(e){};return}setTimeout(function(){try{location.replace(u)}catch(e){}},ms+50)})();<\/script>
@@ -487,32 +466,40 @@
         });
       }
 
-      // ==== Mobile: 1 aba lançadora com botão (2º toque) abre todas as abas ====
-      function openViaMobileLauncher(urls, cooldownSec){
-        const firstDelay = getFirstDelay(); // >=3s
+      // ====== Mobile/Safari: aba lançadora com abertura em lotes ======
+      function openViaLauncherSafari(urls, targets, cooldownSec){
         const launcher = window.open('', '_blank');
         if (!launcher) return [];
 
         const urlsJSON = JSON.stringify(urls);
+        const tgtsJSON = JSON.stringify(targets);
+
         const html = `<!doctype html><html><head><meta charset="utf-8">
 <title>Lançador de buscas</title>
 <meta name="referrer" content="no-referrer">
 <style>
 body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;padding:24px;color:#111;background:#f7f7fb}
 h2{margin:0 0 12px} p{margin:0 0 12px;color:#444}
-button{font-size:16px;padding:12px 16px;border-radius:12px;border:1px solid #dde;cursor:pointer;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.08)}
+button{font-size:16px;padding:12px 16px;border-radius:12px;border:1px solid #dde;cursor:pointer;background:#fff;box-shadow:0 2px 6px rgba(0,0,0,.08);margin-right:8px}
 small{color:#666;display:block;margin-top:8px}
+#info{margin-top:10px;color:#2563eb}
 </style></head><body>
   <h2>Pronto para abrir as abas</h2>
-  <p>Toque no botão abaixo para iniciar as buscas no navegador.</p>
-  <button id="goAll">Abrir <span id="qty"></span> abas agora</button>
-  <small>Primeira navegação ~${firstDelay}s; intervalo ${cooldownSec}s.</small>
-  <p id="msg" style="margin-top:12px;color:#2563eb"></p>
+  <p>Safari limita múltiplas abas por toque. Use os botões abaixo.</p>
+  <div>
+    <button id="open1">Abrir próxima aba</button>
+    <button id="open3">Abrir 3 abas</button>
+  </div>
+  <small>Agendamento preservado: primeira ~${getFirstDelay()}s; intervalo ${cooldownSec}s.</small>
+  <div id="info"></div>
   <script>
     (function(){
       var URLS = ${urlsJSON};
-      document.getElementById('qty').textContent = URLS.length;
-      function mk(u, delaySec){
+      var TARGETS = ${tgtsJSON}; // epoch ms por índice
+      var opened = 0;
+
+      function mk(u, targetMs){
+        var delaySec = Math.max(0, Math.ceil((targetMs - Date.now())/1000));
         var w = window.open('about:blank','_blank'); if(!w) return false;
         try{
           var uAttr = u.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
@@ -527,33 +514,38 @@ small{color:#666;display:block;margin-top:8px}
         }catch(e){}
         return true;
       }
-      function openAll(){
-        var ok=true, iv=${cooldownSec}, base=${firstDelay};
-        URLS.forEach(function(u,i){ if(!mk(u, base + i*iv)) ok=false; });
-        document.getElementById('msg').textContent = ok ? 'Abas abertas. Você pode fechar esta janela.' : 'Algumas abas foram bloqueadas pelo navegador.';
+
+      function openBatch(n){
+        var ok = true, count = 0;
+        while(count < n && opened < URLS.length){
+          ok = mk(URLS[opened], TARGETS[opened]) && ok;
+          opened++; count++;
+        }
+        var left = URLS.length - opened;
+        var el = document.getElementById('info');
+        el.textContent = (left>0)
+          ? ('Abertas '+opened+'/'+URLS.length+'. Toque novamente para abrir mais '+Math.min(3,left)+'.')
+          : 'Todas as abas foram abertas. Você pode fechar esta janela.';
+        if(!ok){ el.textContent += ' (Algumas abas podem ter sido bloqueadas.)'; }
       }
-      document.getElementById('goAll').addEventListener('click', openAll);
+
+      document.getElementById('open1').addEventListener('click', function(){ openBatch(1); });
+      document.getElementById('open3').addEventListener('click', function(){ openBatch(3); });
     })();
   <\/script>
 </body></html>`;
         try { launcher.document.open(); launcher.document.write(html); launcher.document.close(); } catch(e){}
-        return [launcher]; // devolve pelo menos a lançadora para controle
+        return [launcher];
       }
 
-      function runQueueWithShells(urls, shells, cooldownSec, mobile){
+      function runQueueWithShells(shells){
         queueShells = shells.slice();
         if (queueShells.some(w => !w)) {
           $('#status').className = 'msg err';
           $('#status').textContent = 'Pop-ups bloqueados. Habilite pop-ups e tente novamente.';
           return;
         }
-        if (mobile) {
-          $('#waitBox').textContent = `Nova aba lançadora aberta: toque em “Abrir ${urls.length} abas” para iniciar.`;
-          $('#stop').disabled = false;
-        } else {
-          $('#waitBox').textContent = `Abas agendadas: abrirão automaticamente (intervalo ${cooldownSec}s).`;
-          $('#stop').disabled = false;
-        }
+        $('#stop').disabled = false;
       }
 
       function stopQueue(){
@@ -577,9 +569,7 @@ small{color:#666;display:block;margin-top:8px}
         const textIata = resolveToIATA($('#destination').value);
         return dateOk && (hasChips || !!textIata);
       }
-      function updateGoState(){
-        $('#go').disabled = !canSearch();
-      }
+      function updateGoState(){ $('#go').disabled = !canSearch(); }
 
       // ====== Bind ======
       function bind(){
@@ -590,13 +580,32 @@ small{color:#666;display:block;margin-top:8px}
 
         upcaseIATA($('#origin'));
         renderDestChips();
+        loadAirportsWithFallback();
 
         // País
-        loadAirportsWithFallback();
         $('#countrySelect').addEventListener('change', (e)=>{ LAST_COUNTRY = e.target.value; renderCountryAirports(LAST_COUNTRY, $('#countryFilter').value); });
         $('#countryFilter').addEventListener('input', ()=> renderCountryAirports($('#countrySelect').value, $('#countryFilter').value));
-        $('#countryAirports').addEventListener('change', enforceCountrySelectLimit);
-        $('#addFromCountry').addEventListener('click', addSelectedCountryAirports);
+        $('#countryAirports').addEventListener('change', ()=> {
+          const box = $('#countryAirports');
+          const sel = Array.from(box.selectedOptions);
+          if(sel.length > 10){
+            Array.from(box.options).forEach(o => o.selected = false);
+            sel.slice(0,10).forEach(o => o.selected = true);
+            $('#status').className='msg err';
+            $('#status').textContent='Limite de 10 aeroportos por seleção atingido.';
+          }
+        });
+        $('#addFromCountry').addEventListener('click', ()=>{
+          const box = $('#countryAirports');
+          const selected = Array.from(box.selectedOptions).slice(0,10).map(o => o.value.toUpperCase());
+          if(selected.length === 0){
+            $('#status').className='msg err'; $('#status').textContent='Selecione até 10 aeroportos no combo do país.'; return;
+          }
+          selected.forEach(code => dests.add(code));
+          renderDestChips();
+          $('#status').className='msg ok'; $('#status').textContent=`Adicionados ${selected.length} aeroporto(s).`;
+          updateGoState();
+        });
         $('#clearCountrySel').addEventListener('click', ()=>{ Array.from($('#countryAirports').options).forEach(o=>o.selected=false); });
 
         // Inputs & botões
@@ -619,7 +628,11 @@ small{color:#666;display:block;margin-top:8px}
           const explicit = Array.from(dests);
           const fallbackSingle = resolveToIATA($('#destination').value);
           const destinations = explicit.length ? explicit : (fallbackSingle ? [fallbackSingle] : []);
+          if (destinations.length===0){
+            $('#status').className='msg err'; $('#status').textContent='Adicione ao menos um destino.'; return;
+          }
 
+          // valida e monta URLs
           const urls=[];
           for(const dest of destinations){
             const val=validate(origin,dest,date);
@@ -627,13 +640,24 @@ small{color:#666;display:block;margin-top:8px}
             urls.push( buildLatamURL({ origin, destination: dest, date }) );
           }
 
-          updateOutput({ origin, destinos: destinations, data: date, intervalo_s: cooldownSec, mobile: isMobileUA(), first_delay_s: getFirstDelay() });
+          // agenda absoluta: primeira ~3s (mobile), demais no intervalo
+          const firstDelay = getFirstDelay();
+          const startBase = Date.now() + 300; // leve folga
+          const targets = urls.map((_, i) => startBase + ((firstDelay + i*cooldownSec) * 1000));
+
+          updateOutput({ origin, destinos: destinations, data: date, intervalo_s: cooldownSec, first_delay_s: firstDelay, safari: isSafari(), mobile: isMobile() });
 
           let shells=[];
-          if (isMobileUA()) {
-            shells = openViaMobileLauncher(urls, cooldownSec); // botão “Abrir X abas” dentro da lançadora
+          if (isSafari()) {
+            shells = openViaLauncherSafari(urls, targets, cooldownSec); // abre via botões (1 ou 3 por toque)
+            $('#waitBox').textContent = `Aba lançadora aberta: toque em “Abrir próxima aba” até concluir.`;
+          } else if (isMobile()) {
+            // mobile não-Safari: ainda pode bloquear múltiplas; usar lançadora também
+            shells = openViaLauncherSafari(urls, targets, cooldownSec);
+            $('#waitBox').textContent = `Aba lançadora aberta: use os botões para abrir as abas.`;
           } else {
-            shells = preopenShellTabsDesktop(urls, cooldownSec);
+            shells = preopenShellTabsDesktop(urls, cooldownSec, targets);
+            $('#waitBox').textContent = `Abas agendadas: abrirão automaticamente (intervalo ${cooldownSec}s).`;
           }
 
           if(shells.length===0 || shells.some(w=>!w)){
@@ -641,7 +665,7 @@ small{color:#666;display:block;margin-top:8px}
             $('#status').textContent='Pop-ups bloqueados. Permita pop-ups e clique novamente.';
             return;
           }
-          runQueueWithShells(urls, shells, cooldownSec, isMobileUA());
+          runQueueWithShells(shells);
         });
 
         // Limpar
