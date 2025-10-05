@@ -38,7 +38,7 @@
     .msg.ok{ color: var(--ok) }
     .msg.err{ color: var(--err) }
 
-    small.hint{ color: var(--muted); display:block; margin-top:6px }
+    small.hint{ color:var(--muted); display:block; margin-top:6px }
 
     details.testpanel{ margin-top:18px; border-top:1px dashed var(--line); padding-top:14px }
     .test-pass{ color: var(--ok) }
@@ -73,14 +73,8 @@
         <ol>
           <li><b>Faça login</b> na LATAM em outra aba antes de usar (obrigatório).</li>
           <li>Autorize <b>pop-ups</b> para este site.</li>
-          <li>No <b>celular</b>, o fluxo abre em abas do <b>navegador</b> (não do app). Se o sistema oferecer “Abrir no app”, escolha <b>permanecer no navegador</b>.</li>
-          <li>Ao clicar em <b>Buscar</b>, abrimos <i>abas de espera</i> (about:blank) para cada destino:
-            <ul>
-              <li>A <b>1ª aba</b> navega para a LATAM imediatamente.</li>
-              <li>As demais <b>auto-navegam a cada <span id="iv">15</span>s</b> (0s, <span id="iv2">15</span>s, ...), mesmo que você troque de aba (timer roda em cada aba via meta-refresh).</li>
-              <li>O botão <b>Parar fila</b> fecha as abas ainda em espera.</li>
-            </ul>
-          </li>
+          <li>No <b>celular</b>, abrimos abas do <b>navegador</b> (não do app). <u>A primeira navegação aguarda ~3s</u> para garantir que todas as abas sejam abertas.</li>
+          <li>Ao clicar em <b>Buscar</b>, criamos <i>abas de espera</i> (about:blank) que <b>auto-navegam a cada <span id="iv">15</span>s</b> (3s + 0·iv, 3s + 1·iv, 3s + 2·iv, ... no celular).</li>
         </ol>
       </div>
 
@@ -121,7 +115,6 @@
         </div>
       </div>
 
-      <!-- Seleção por país (até 10) -->
       <div class="country">
         <label><strong>Selecionar por país (até 10 aeroportos)</strong></label>
         <div class="grid2">
@@ -133,7 +126,7 @@
           <div>
             <label for="countryAirports">Aeroportos do país (selecione até 10)</label>
             <select id="countryAirports" multiple size="12" aria-label="Aeroportos do país"></select>
-            <small class="hint">Dica: use Ctrl/Cmd para múltiplos. Limite: 10 por vez.</small>
+            <small class="hint">Use Ctrl/Cmd para múltiplos. Limite: 10 por vez.</small>
           </div>
           <div>
             <label for="countryFilter">Filtrar (nome/cidade/IATA)</label>
@@ -170,14 +163,15 @@
     if (!window.__LATAM_WIDGET_INIT__) {
       window.__LATAM_WIDGET_INIT__ = true;
 
-      // ====== CONFIG PADRÃO ======
-      const COOLDOWN_DEFAULT = 15;  // valor inicial
+      // ====== CONFIG ======
+      const COOLDOWN_DEFAULT = 15;                 // intervalo padrão entre abas
+      const FIRST_DELAY_MOBILE_SECONDS = 3;        // atraso inicial no celular (para abrir todas as abas)
       const LATAM_BASE = 'https://www.latamairlines.com/br/pt/oferta-voos';
-      const SUGGEST_ONLY_BR = false; // true => sugere só BR
-      const USE_EXP_ID = true;       // true => inclui exp_id aleatório
-      const FORCE_WEB_PARAM = { channel: 'web' }; // parâmetro neutro
+      const SUGGEST_ONLY_BR = false;               // true => sugere só BR
+      const USE_EXP_ID = true;                     // true => inclui exp_id aleatório
+      const FORCE_WEB_PARAM = { channel: 'web' };  // parâmetro neutro p/ reforçar web
 
-      // Mapas de país (ISO2 <-> nome PT-BR)
+      // Países (ISO2 -> nome PT-BR)
       const ISO_TO_PT = {
         BR:'Brasil', AR:'Argentina', CL:'Chile', UY:'Uruguai', PY:'Paraguai', BO:'Bolívia', PE:'Peru',
         CO:'Colômbia', EC:'Equador', VE:'Venezuela', US:'Estados Unidos', CA:'Canadá', MX:'México',
@@ -194,13 +188,13 @@
         'CHINA':'CN','UNITED ARAB EMIRATES':'AE','EMIRADOS ÁRABES UNIDOS':'AE','QATAR':'QA','CATAR':'QA','TURKEY':'TR','TURQUIA':'TR'
       };
 
-      // Fallback offline mínimo (BR)
+      // Fallback offline (BR básico)
       const BR_IATA = ['GRU','CGH','VCP','GIG','SDU','BSB','CNF','CWB','POA','FLN','REC','FOR','NAT','AJU','VIX','GYN','SLZ','SSA','BEL','MAO'];
       const FALLBACK_BR = BR_IATA.map(code => ({iata:code, city:'', name:'', cc:'BR'}));
 
       // Estado
       const $ = (sel, p=document) => p.querySelector(sel);
-      let AIRPORTS = [];            // [{iata,city,name,cc}]
+      let AIRPORTS = [];            // [{iata,city,name,cc,countryName}]
       let DROPDOWN_ITEMS = [];      // [{label, code}]
       let COUNTRY_LIST = [];        // [{cc, name}]
       let LAST_COUNTRY = 'BR';
@@ -220,6 +214,9 @@
         v = Math.max(min, Math.min(max, v));
         el.value = String(v);
         return v;
+      }
+      function getFirstDelay(){
+        return isMobileUA() ? Math.max(3, FIRST_DELAY_MOBILE_SECONDS) : 0;
       }
       function updateIntervalTexts(){
         const v = getCooldown();
@@ -241,7 +238,6 @@
         dl.innerHTML = list.map(a => `<option value="${a.iata}">${a.iata} — ${a.city||''} (${a.name||''})</option>`).join('');
       }
       function normalizeCountryFields(a){
-        // tenta extrair cc (ISO2) e name PT-BR a partir de possíveis campos
         let codeCandidate = (a.iso || a.iso_country || a.country_code || a.country || '').toString().trim();
         let cc = '';
         let name = '';
@@ -249,7 +245,6 @@
           cc = codeCandidate.toUpperCase();
           name = ISO_TO_PT[cc] || a.country_name || a.country || cc;
         } else {
-          // trata como nome
           const key = codeCandidate.toUpperCase();
           cc = NAME_TO_ISO[key] || '';
           name = codeCandidate || (ISO_TO_PT[cc] || cc);
@@ -271,9 +266,7 @@
         list.forEach(a => {
           const cc = (a.cc||'').toUpperCase();
           if (!cc) return;
-          if (!map.has(cc)) {
-            map.set(cc, a.countryName || ISO_TO_PT[cc] || cc);
-          }
+          if (!map.has(cc)) map.set(cc, a.countryName || ISO_TO_PT[cc] || cc);
         });
         return Array.from(map.entries())
           .map(([cc, name]) => ({cc, name}))
@@ -301,7 +294,7 @@
         box.innerHTML = list.map(a => `<option value="${a.iata}">${a.iata} — ${a.city||''}${a.city&&a.name?' • ':''}${a.name||''}</option>`).join('');
       }
 
-      // ====== Fetch IATAs (CDN + fallback) ======
+      // ====== Fetch IATAs ======
       async function fetchIATAsFromCDN(timeoutMs=8000){
         const ctrl = new AbortController();
         const timer = setTimeout(()=>ctrl.abort(), timeoutMs);
@@ -351,7 +344,7 @@
         }
       }
 
-      // ====== Dropdown manual (itens {label, code}) ======
+      // ====== Dropdown manual ======
       function attachDropdown(input, drop, items){
         const show = (arr) => {
           if(!arr.length){ drop.style.display='none'; return; }
@@ -383,7 +376,7 @@
         }
       }
 
-      // ====== Resolver texto -> IATA (destino) ======
+      // ====== Resolver texto -> IATA ======
       function resolveToIATA(text){
         const t = (text||'').trim();
         if(!t) return '';
@@ -428,7 +421,6 @@
           redemption:'true', sort:'RECOMMENDED'
         };
         if (USE_EXP_ID) params.exp_id = uuidv4();
-        // reforço “web”
         Object.entries(FORCE_WEB_PARAM).forEach(([k,v])=> params[k]=v);
         const qp = new URLSearchParams(params);
         return `${LATAM_BASE}?${qp.toString()}`;
@@ -459,7 +451,7 @@
         box.querySelectorAll('.rm').forEach(btn=> btn.addEventListener('click', ()=> removeDestination(btn.dataset.code)) );
       }
 
-      // ====== País (seleção até 10) ======
+      // ====== Seleção por país (até 10) ======
       function addSelectedCountryAirports(){
         const box = $('#countryAirports');
         const selected = Array.from(box.selectedOptions).slice(0,10).map(o => o.value.toUpperCase());
@@ -484,14 +476,15 @@
 
       // ==== Pré-abertura de abas — cada aba se auto-navega (meta refresh) ====
       function preopenShellTabs(urls, cooldownSec){
+        const firstDelay = getFirstDelay(); // 3s no mobile, 0s no desktop
         return urls.map((u, idx) => {
-          const delaySec = idx * cooldownSec;
+          const delaySec = firstDelay + (idx * cooldownSec); // ex.: 3s, 3+iv, 3+2·iv...
           const w = window.open('about:blank', '_blank'); // mantém no navegador
           if (w && w.document) {
             try {
               const uAttr = u.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-              const title = delaySec === 0 ? 'Abrindo LATAM…' : `Agendado (${delaySec}s)`;
-              const body  = delaySec === 0 ? 'Abrindo o primeiro destino agora…' : `Este destino abrirá automaticamente em ${delaySec}s.`;
+              const title = `Agendado (${delaySec}s)`;
+              const body  = `Esta aba abrirá automaticamente em ${delaySec}s.`;
               const html = `<!doctype html><html><head><meta charset="utf-8">
 <title>${title}</title>
 <meta http-equiv="refresh" content="${delaySec};url=${uAttr}">
@@ -525,13 +518,8 @@ a{color:#2563eb;text-decoration:none;border-bottom:1px solid rgba(37,99,235,.4)}
           $('#status').textContent = 'Pop-ups bloqueados. Habilite pop-ups e tente novamente.';
           return;
         }
-        if (urls.length === 1) {
-          $('#waitBox').textContent = 'Busca aberta em nova aba.';
-          $('#stop').disabled = true;
-        } else {
-          $('#waitBox').textContent = `Abas agendadas: abrirão automaticamente a cada ${cooldownSec}s.`;
-          $('#stop').disabled = false;
-        }
+        $('#waitBox').textContent = `Abas agendadas: abrirão automaticamente (primeira em ${getFirstDelay()}s; intervalo ${cooldownSec}s).`;
+        $('#stop').disabled = false;
       }
 
       function stopQueue(){
@@ -559,6 +547,7 @@ a{color:#2563eb;text-decoration:none;border-bottom:1px solid rgba(37,99,235,.4)}
         $('#go').disabled = !canSearch();
       }
 
+      // ====== Bind ======
       function bind(){
         setMinDateToday();
         $('#interval').value = String(COOLDOWN_DEFAULT);
@@ -576,14 +565,14 @@ a{color:#2563eb;text-decoration:none;border-bottom:1px solid rgba(37,99,235,.4)}
         $('#addFromCountry').addEventListener('click', addSelectedCountryAirports);
         $('#clearCountrySel').addEventListener('click', ()=>{ Array.from($('#countryAirports').options).forEach(o=>o.selected=false); });
 
-        // Botões/inputs
+        // Inputs & botões
         $('#addDest').addEventListener('click', ()=> addDestination($('#destination').value));
         $('#clearDests').addEventListener('click', clearDestinations);
         $('#stop').addEventListener('click', stopQueue);
         $('#destination').addEventListener('input', updateGoState);
         $('#date').addEventListener('change', updateGoState);
 
-        // Buscar (só habilita quando pode)
+        // Buscar
         $('#go').addEventListener('click', () => {
           if (!canSearch()) return;
 
@@ -604,7 +593,7 @@ a{color:#2563eb;text-decoration:none;border-bottom:1px solid rgba(37,99,235,.4)}
             urls.push( buildLatamURL({ origin, destination: dest, date }) );
           }
 
-          updateOutput({ origin, destinos: destinations, data: date, intervalo_s: cooldownSec, mobile_forcado: isMobileUA() });
+          updateOutput({ origin, destinos: destinations, data: date, intervalo_s: cooldownSec, first_delay_s: getFirstDelay(), mobile: isMobileUA() });
 
           const shells = preopenShellTabs(urls, cooldownSec);
           if(shells.some(w=>!w)){
@@ -656,10 +645,10 @@ a{color:#2563eb;text-decoration:none;border-bottom:1px solid rgba(37,99,235,.4)}
           tassert('destination=SCL', sp.get('destination')==='SCL');
           tassert('outbound=2025-10-11T15:00:00.000Z', sp.get('outbound')==='2025-10-11T15:00:00.000Z');
         }catch(e){ tassert('Parsing URL exemplo', false); }
+        tassert('Atraso inicial mobile >= 3s', (function(){ var d = (typeof getFirstDelay==='function') ? getFirstDelay() : 0; return (isMobileUA() ? d>=3 : d===0); })());
       }
     }
   </script>
-  <!-- Datalist somente para UX do navegador -->
   <datalist id="airportsBR"></datalist>
 </body>
 </html>
