@@ -49,6 +49,9 @@
     .chip .rm{ cursor:pointer; border:none; background:transparent; color:var(--muted); font-weight:700 }
     .chip .rm:hover{ color:#fff }
 
+    /* mini chip indicador */
+    .chipmini{ display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid var(--line); background:#0b1329; color:#e8eefc; font-size:.75rem; margin-left:8px; vertical-align:middle }
+
     .rel{ position:relative }
     .dropdown{ position:absolute; left:0; right:0; top:100%; margin-top:6px; background:#0b1329; border:1px solid var(--line); border-radius:12px; max-height:280px; overflow:auto; display:none; z-index:50 }
     .dropdown .opt{ padding:8px 10px; cursor:pointer; border-bottom:1px dashed rgba(255,255,255,.06) }
@@ -131,7 +134,10 @@
             </div>
           </div>
           <div>
-            <label for="countryAirports">Aeroportos do país (selecione até 10)</label>
+            <label for="countryAirports">
+              Aeroportos do país (selecione até 10)
+              <span id="chipCountryIntl" class="chipmini" hidden>🌐 internacionais</span>
+            </label>
             <select id="countryAirports" multiple size="12" aria-label="Aeroportos do país"></select>
             <small class="hint">Use Ctrl/Cmd para múltiplos. Limite: 10 por vez.</small>
           </div>
@@ -157,7 +163,7 @@
               <div class="dropdown" id="drop-near" role="listbox" aria-label="Sugestões de base"></div>
             </div>
             <small class="hint">Calcula aeroportos mais próximos usando coordenadas.</small>
-            <div style="margin-top:8px;display:flex;gap:12px;align-items:center">
+            <div style="margin-top:8px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
               <label style="display:flex;gap:8px;align-items:center;margin:0">
                 <input id="nearSameCountry" type="checkbox" checked />
                 Mesmo país
@@ -170,21 +176,24 @@
           </div>
 
           <div>
-            <div style="display:grid; gap:10px; grid-template-columns: 1fr 1fr 1fr;">
+            <div style="display:grid; gap:10px; grid-template-columns: 1fr 1fr;">
               <div>
-                <label for="nearRadius">Raio (km)</label>
-                <input id="nearRadius" type="number" min="10" max="2000" step="10" value="200" />
+                <label for="nearRadiusRange">Raio: <span id="nearRadiusVal">200</span> km</label>
+                <input id="nearRadiusRange" type="range" min="0" max="2000" step="10" value="200" />
+                <small class="hint">0 = ignora raio e pega só os Top N.</small>
               </div>
               <div>
                 <label for="nearMax">Máx. resultados</label>
                 <input id="nearMax" type="number" min="1" max="10" step="1" value="5" />
               </div>
-              <div style="display:flex;align-items:end"><small class="hint">Deixe raio 0 para pegar os top N.</small></div>
             </div>
           </div>
 
           <div>
-            <label for="nearList">Próximos do base (selecione até 10)</label>
+            <label for="nearList">
+              Próximos do base (selecione até 10)
+              <span id="chipNearIntl" class="chipmini" hidden>🌐 internacionais</span>
+            </label>
             <select id="nearList" multiple size="10" aria-label="Aeroportos próximos"></select>
             <div class="actions">
               <button id="nearFind" class="btn btn-ghost" type="button">Listar</button>
@@ -405,6 +414,7 @@
         COUNTRY_LIST = buildCountryList(AIRPORTS);
         populateCountrySelect();
         renderCountryAirports($('#countrySelect').value, $('#countryFilter').value, $('#countryIntl').checked);
+        updateIntlChips();
 
         $('#status').className='msg'; $('#status').textContent='Carregando lista global de IATAs…';
         try{
@@ -419,6 +429,7 @@
           COUNTRY_LIST = buildCountryList(AIRPORTS);
           populateCountrySelect();
           renderCountryAirports($('#countrySelect').value, $('#countryFilter').value, $('#countryIntl').checked);
+          updateIntlChips();
 
           $('#status').className='msg ok'; $('#status').textContent='Lista IATA carregada (CDN).';
         } catch(e){
@@ -456,7 +467,7 @@
         });
         input.addEventListener('blur', ()=> setTimeout(()=> drop.style.display='none', 180));
         if(input.id === 'destination'){
-          input.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); addDestination(input.value); } });
+          input.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); addDestination($('#destination').value); } });
         }
       }
 
@@ -628,7 +639,7 @@
           $('#status').textContent='Proximidade requer a lista global (CDN) com coordenadas. Tente novamente após carregar.';
           return;
         }
-        let radius = parseInt($('#nearRadius').value, 10);
+        const radius = parseInt($('#nearRadiusRange').value, 10);
         const maxN   = Math.max(1, Math.min(10, parseInt($('#nearMax').value, 10) || 5));
         const sameCC = $('#nearSameCountry').checked;
         const intlOnly = $('#nearIntl').checked;
@@ -794,6 +805,14 @@ small{color:#666;display:block;margin-top:8px}
       }
       function updateGoState(){ $('#go').disabled = !canSearch(); }
 
+      // ====== Chips de “internacionais” nos títulos ======
+      function updateIntlChips(){
+        const chipCountry = $('#chipCountryIntl');
+        const chipNear = $('#chipNearIntl');
+        if (chipCountry) chipCountry.hidden = !$('#countryIntl').checked;
+        if (chipNear) chipNear.hidden = !$('#nearIntl').checked;
+      }
+
       // ====== Bind ======
       function bind(){
         setMinDateToday();
@@ -808,7 +827,7 @@ small{color:#666;display:block;margin-top:8px}
         // País
         $('#countrySelect').addEventListener('change', (e)=>{ LAST_COUNTRY = e.target.value; renderCountryAirports(LAST_COUNTRY, $('#countryFilter').value, $('#countryIntl').checked); });
         $('#countryFilter').addEventListener('input', ()=> renderCountryAirports($('#countrySelect').value, $('#countryFilter').value, $('#countryIntl').checked));
-        $('#countryIntl').addEventListener('change', ()=> renderCountryAirports($('#countrySelect').value, $('#countryFilter').value, $('#countryIntl').checked));
+        $('#countryIntl').addEventListener('change', ()=>{ renderCountryAirports($('#countrySelect').value, $('#countryFilter').value, $('#countryIntl').checked); updateIntlChips(); });
         $('#countryAirports').addEventListener('change', enforceCountrySelectLimit);
         $('#addFromCountry').addEventListener('click', addSelectedCountryAirports);
         $('#clearCountrySel').addEventListener('click', ()=>{ Array.from($('#countryAirports').options).forEach(o=>o.selected=false); });
@@ -818,6 +837,11 @@ small{color:#666;display:block;margin-top:8px}
         $('#addNear').addEventListener('click', addNearSelected);
         $('#clearNearSel').addEventListener('click', ()=>{ Array.from($('#nearList').options).forEach(o=>o.selected=false); });
         $('#nearBase').addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); findNearby(); } });
+        $('#nearIntl').addEventListener('change', ()=>{ updateIntlChips(); }); // só atualiza chip; a lista atualiza ao clicar “Listar”
+        // slider de raio
+        const r = $('#nearRadiusRange'), rv = $('#nearRadiusVal');
+        const upd = ()=>{ rv.textContent = String(r.value); };
+        r.addEventListener('input', upd); upd();
 
         // Inputs & botões gerais
         $('#addDest').addEventListener('click', ()=> addDestination($('#destination').value));
@@ -890,10 +914,17 @@ small{color:#666;display:block;margin-top:8px}
           renderCountryAirports($('#countrySelect').value, '', $('#countryIntl').checked);
           Array.from($('#countryAirports').options).forEach(o=>o.selected=false);
           $('#nearBase').value=''; $('#nearList').innerHTML='';
+          updateIntlChips();
           updateGoState();
+          // reset slider
+          const r = $('#nearRadiusRange'); r.value = 200; $('#nearRadiusVal').textContent = '200';
+          $('#nearMax').value = 5;
+          $('#nearSameCountry').checked = true;
+          $('#nearIntl').checked = false;
         });
 
         updateGoState();
+        updateIntlChips();
         runSelfTests();
       }
 
@@ -921,6 +952,8 @@ small{color:#666;display:block;margin-top:8px}
         }catch(e){ tassert('Parsing URL exemplo', false); }
         // Haversine sanidade (~GRU-CGH ~20km)
         (function(){ const gru={lat:-23.43,lon:-46.47}, cgh={lat:-23.63,lon:-46.66}; const d=haversineKm(gru,cgh); tassert('haversine numérico', isFinite(d) && d>10 && d<40); })();
+        // Slider disponível
+        tassert('Slider de raio presente', !!document.getElementById('nearRadiusRange'));
       }
     }
   </script>
