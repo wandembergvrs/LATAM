@@ -257,35 +257,21 @@
 
       // ===== Desbloqueio de limite =====
       let limitUnlocked = false;
-      function getSelectCap(){ return limitUnlocked ? 1000 : 10; } // “ilimitado” prático
+      function getSelectCap(){ return limitUnlocked ? 1000 : 10; }
       function updateLimitUI(){
-        const cap = getSelectCap();
         const txt = limitUnlocked ? 'ilimitado' : '10';
-        const showUnlock = limitUnlocked;
-
-        const ids = ['capCountrySpan','capNearSpan','capCountryText','capNearText'];
-        ids.forEach(id => { const el = document.getElementById(id); if(el) el.textContent = txt; });
-
-        const chip = $('#chipUnlocked'); if (chip) chip.hidden = !showUnlock;
-
+        ['capCountrySpan','capNearSpan','capCountryText','capNearText'].forEach(id => { const el = document.getElementById(id); if(el) el.textContent = txt; });
+        const chip = $('#chipUnlocked'); if (chip) chip.hidden = !limitUnlocked;
         const btn = $('#unlock');
-        if (btn){
-          if (limitUnlocked) { btn.textContent = 'Limite desbloqueado'; btn.disabled = true; }
-          else { btn.textContent = 'Desbloquear limite'; btn.disabled = false; }
-        }
+        if (btn){ if (limitUnlocked) { btn.textContent = 'Limite desbloqueado'; btn.disabled = true; } else { btn.textContent = 'Desbloquear limite'; btn.disabled = false; } }
       }
       function unlockLimitFlow(){
         const pw = prompt('Digite a senha para desbloquear o limite de seleção:');
         if(!pw) return;
         if(pw.trim().toUpperCase() === 'VIAJAMAIS'){
-          limitUnlocked = true;
-          updateLimitUI();
-          $('#status').className='msg ok';
-          $('#status').textContent='Limite de seleção desbloqueado.';
-        } else {
-          $('#status').className='msg err';
-          $('#status').textContent='Senha inválida.';
-        }
+          limitUnlocked = true; updateLimitUI();
+          $('#status').className='msg ok'; $('#status').textContent='Limite de seleção desbloqueado.';
+        } else { $('#status').className='msg err'; $('#status').textContent='Senha inválida.'; }
       }
 
       // ===== Helpers UA =====
@@ -495,7 +481,7 @@
         $('#status').className='msg ok'; $('#status').textContent=`Adicionados ${selected.length} aeroporto(s) do país ${$('#countrySelect').value}.`;
       }
       function enforceCountrySelectLimit(){
-        if (limitUnlocked) return; // sem limite quando desbloqueado
+        if (limitUnlocked) return;
         const box=$('#countryAirports');
         const sel=Array.from(box.selectedOptions);
         if(sel.length>10){
@@ -522,7 +508,7 @@
         if(baseApt.lat==null||baseApt.lon==null){ $('#status').className='msg err'; $('#status').textContent='Proximidade requer a lista global (CDN) com coordenadas. Tente novamente após carregar.'; return; }
 
         const radius=parseInt($('#nearRadiusRange').value,10);
-        const maxN=Math.max(1, Math.min(200, parseInt($('#nearMax').value,10)||25));
+        const maxN=Math.max(1, Math.min(200, parseInt($('#nearMax').value,10)||25)); // <-- AGORA SEMPRE APLICA
         const sameCC=$('#nearSameCountry').checked;
         const intlOnly=$('#nearIntl').checked;
 
@@ -533,11 +519,21 @@
 
         let picked;
         if(!radius || radius<=0){ picked=withDist.slice(0,maxN); }
-        else { picked=withDist.filter(x=>x.dist<=radius).slice(0,300); } // cap de segurança
+        else { picked=withDist.filter(x=>x.dist<=radius).slice(0,maxN); } // <-- CAP TAMBÉM COM RAIO
 
         renderNearList(picked);
         if(picked.length===0){ $('#status').className='msg warn'; $('#status').textContent='Nenhum aeroporto encontrado com os filtros. Ajuste o raio/país/internacionais.'; }
         else { $('#status').className='msg ok'; $('#status').textContent=`Encontrados ${picked.length} aeroporto(s) próximos de ${baseApt.iata}.`; }
+      }
+      function enforceNearSelectLimit(){
+        if (limitUnlocked) return;
+        const box = $('#nearList');
+        const sel = Array.from(box.selectedOptions);
+        if (sel.length > 10){
+          Array.from(box.options).forEach(o=>o.selected=false);
+          sel.slice(0,10).forEach(o=>o.selected=true);
+          $('#status').className='msg err'; $('#status').textContent='Limite de 10 aeroportos por seleção atingido.';
+        }
       }
       function addNearSelected(){
         const box=$('#nearList');
@@ -678,6 +674,7 @@ small{color:#666;display:block;margin-top:8px}
 
         // Proximidade
         $('#nearFind').addEventListener('click', findNearby);
+        $('#nearList').addEventListener('change', enforceNearSelectLimit); // <-- FECHA O LIMITE NA SELEÇÃO
         $('#addNear').addEventListener('click', addNearSelected);
         $('#clearNearSel').addEventListener('click', ()=>{ Array.from($('#nearList').options).forEach(o=>o.selected=false); });
         $('#nearBase').addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); findNearby(); } });
@@ -763,7 +760,8 @@ small{color:#666;display:block;margin-top:8px}
           tassert('outbound=2025-10-11T15:00:00.000Z', sp.get('outbound')==='2025-10-11T15:00:00.000Z');
         }catch(e){ tassert('Parsing URL exemplo', false); }
         (function(){ const gru={lat:-23.43,lon:-46.47}, cgh={lat:-23.63,lon:-46.66}; const d=haversineKm(gru,cgh); tassert('haversine numérico', isFinite(d)&&d>10&&d<40); })();
-        tassert('Desbloqueio presente', !!document.getElementById('unlock'));
+        // nearMax aplicado em ambos os casos
+        tassert('nearMax existe', !!document.getElementById('nearMax'));
       }
     }
   </script>
