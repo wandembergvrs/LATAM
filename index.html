@@ -61,7 +61,15 @@
     .country, .near{ margin-top:16px; border-top:1px dashed var(--line); padding-top:16px }
     .country .grid2, .near .grid2{ display:grid; gap:12px; grid-template-columns: 1fr; }
     @media (min-width: 1100px){ .country .grid2, .near .grid2{ grid-template-columns: 1fr 2fr 1fr; } }
-    #countryAirports, #nearList{ min-height:240px }
+    #countryAirports{ min-height:240px }
+    #nearList{ min-height:240px }
+
+    /* Fallback iOS: lista com checkboxes */
+    .vlist{ border:1px solid var(--line); border-radius:12px; background:#0b1329; padding:6px; max-height:280px; overflow:auto; }
+    .vopt{ display:flex; align-items:center; gap:10px; padding:6px 6px; border-bottom:1px dashed rgba(255,255,255,.06); }
+    .vopt:last-child{ border-bottom:none }
+    .vopt input[type="checkbox"]{ width:auto }
+    .muted{ color:#9aa6c1 }
   </style>
 </head>
 <body>
@@ -118,7 +126,7 @@
         </div>
       </div>
 
-      <!-- Seleção por país (até N) -->
+      <!-- Seleção por país -->
       <div class="country">
         <label><strong>Selecionar por país</strong> <span id="chipUnlocked" class="chipmini ok" hidden>🔓 limite liberado</span></label>
         <div class="grid2">
@@ -196,7 +204,13 @@
               Próximos do base (selecione até <span id="capNearSpan">10</span>)
               <span id="chipNearIntl" class="chipmini" hidden>🌐 internacionais</span>
             </label>
-            <select id="nearList" multiple size="10" aria-label="Aeroportos próximos"></select>
+
+            <!-- wrapper com dois modos: select (desktop) e lista alternativa (iOS) -->
+            <div id="nearListWrap">
+              <select id="nearList" multiple size="10" aria-label="Aeroportos próximos"></select>
+              <div id="nearListAlt" class="vlist" hidden aria-label="Aeroportos próximos (lista móvel)"></div>
+            </div>
+
             <div class="actions">
               <button id="nearFind" class="btn btn-ghost" type="button">Listar</button>
               <button id="addNear" class="btn btn-ghost" type="button">Adicionar selecionados</button>
@@ -238,7 +252,6 @@
       const USE_EXP_ID = true;
       const FORCE_WEB_PARAM = { channel: 'web' };
 
-      // Fallback BR & países
       const ISO_TO_PT = { BR:'Brasil', AR:'Argentina', CL:'Chile', UY:'Uruguai', PY:'Paraguai', BO:'Bolívia', PE:'Peru', CO:'Colômbia', EC:'Equador', VE:'Venezuela', US:'Estados Unidos', CA:'Canadá', MX:'México', PT:'Portugal', ES:'Espanha', FR:'França', GB:'Reino Unido', DE:'Alemanha', IT:'Itália', NL:'Países Baixos', AU:'Austrália', NZ:'Nova Zelândia', ZA:'África do Sul', JP:'Japão', CN:'China', AE:'Emirados Árabes Unidos', QA:'Catar', TR:'Turquia' };
       const NAME_TO_ISO = { 'BRAZIL':'BR','BRASIL':'BR','ARGENTINA':'AR','CHILE':'CL','URUGUAY':'UY','URUGUAI':'UY','PARAGUAY':'PY','PARAGUAI':'PY','BOLIVIA':'BO','PERU':'PE','COLOMBIA':'CO','ECUADOR':'EC','EQUADOR':'EC','VENEZUELA':'VE','UNITED STATES':'US','ESTADOS UNIDOS':'US','CANADA':'CA','CANADÁ':'CA','MEXICO':'MX','MÉXICO':'MX','PORTUGAL':'PT','SPAIN':'ES','ESPANHA':'ES','FRANCE':'FR','FRANÇA':'FR','UNITED KINGDOM':'GB','REINO UNIDO':'GB','GERMANY':'DE','ALEMANHA':'DE','ITALY':'IT','ITÁLIA':'IT','NETHERLANDS':'NL','PAÍSES BAIXOS':'NL','AUSTRALIA':'AU','NEW ZEALAND':'NZ','SOUTH AFRICA':'ZA','ÁFRICA DO SUL':'ZA','JAPAN':'JP','JAPÃO':'JP','CHINA':'CN','UNITED ARAB EMIRATES':'AE','EMIRADOS ÁRABES UNIDOS':'AE','QATAR':'QA','CATAR':'QA','TURKEY':'TR','TURQUIA':'TR' };
 
@@ -246,8 +259,8 @@
       const BR_INTL_SET = new Set(['GRU','GIG','BSB','CNF','CWB','POA','VCP','REC','FOR','NAT','VIX','SLZ','SSA','BEL','MAO','FLN']);
       const FALLBACK_BR = BR_IATA.map(code => ({iata:code, city:'', name: BR_INTL_SET.has(code)?'International':'' , country:'BR'}));
 
-      // Estado
       const $ = (sel, p=document) => p.querySelector(sel);
+
       let AIRPORTS = [];
       let DROPDOWN_ITEMS = [];
       let COUNTRY_LIST = [];
@@ -255,7 +268,7 @@
       let queueShells = [];
       const dests = new Set();
 
-      // ===== Desbloqueio de limite =====
+      // Desbloqueio de limite
       let limitUnlocked = false;
       function getSelectCap(){ return limitUnlocked ? 1000 : 10; }
       function updateLimitUI(){
@@ -274,18 +287,20 @@
         } else { $('#status').className='msg err'; $('#status').textContent='Senha inválida.'; }
       }
 
-      // ===== Helpers UA =====
+      // UA helpers
       function isMobile(){ return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent); }
+      function isIOS(){ return /iP(hone|ad|od)/i.test(navigator.userAgent); }
       function isSafari(){ const ua=navigator.userAgent, vendor=navigator.vendor; return /Safari/.test(ua) && /Apple/.test(vendor||'') && !/CriOS|FxiOS|EdgiOS|OPiOS|Chrome|Android/i.test(ua); }
+      function useAltMulti(){ return isIOS(); } // fallback de múltipla seleção no iOS
 
-      // ===== Helpers gerais =====
+      // Gerais
       function getCooldown(){ const el=$('#interval'); const min=parseInt(el.min,10)||3; const max=parseInt(el.max,10)||120; let v=parseInt(el.value||COOLDOWN_DEFAULT,10); if(isNaN(v)) v=COOLDOWN_DEFAULT; v=Math.max(min,Math.min(max,v)); el.value=String(v); return v; }
       function getFirstDelay(){ return (isMobile() ? Math.max(3, FIRST_DELAY_MOBILE_SECONDS) : 0); }
       function updateIntervalTexts(){ const v=getCooldown(); ['iv','iv2','ivTitle'].forEach(id=>{ const s=document.getElementById(id); if(s) s.textContent=String(v); }); }
       function setMinDateToday(){ const now=new Date(); const yyyy=now.getFullYear(); const mm=String(now.getMonth()+1).padStart(2,'0'); const dd=String(now.getDate()).padStart(2,'0'); const iso=`${yyyy}-${mm}-${dd}`; $('#date').min=iso; if(!$('#date').value) $('#date').value=iso; }
       function upcaseIATA(inp){ inp.addEventListener('input', ()=>{ inp.value = inp.value.replace(/[^a-zA-Z]/g,'').toUpperCase().slice(0,3); updateGoState(); }); }
 
-      // ===== País / airports util =====
+      // País / airports
       function normalizeCountryFields(a){
         let codeCandidate=(a.iso||a.iso_country||a.country_code||a.country||'').toString().trim();
         let cc='', name='';
@@ -318,7 +333,7 @@
         box.innerHTML=list.map(a=>`<option value="${a.iata}">${a.iata} — ${a.city||''}${a.city&&a.name?' • ':''}${a.name||''}${a.intl?' 🌐':''}</option>`).join('');
       }
 
-      // ====== Fetch IATAs ======
+      // Fetch IATAs
       async function fetchIATAsFromCDN(timeoutMs=8000){
         const ctrl=new AbortController(); const timer=setTimeout(()=>ctrl.abort(), timeoutMs);
         try{ const url='https://cdn.jsdelivr.net/gh/mwgg/Airports/airports.json'; const res=await fetch(url,{signal:ctrl.signal,cache:'force-cache'}); if(!res.ok) throw new Error('HTTP '+res.status); const data=await res.json(); return Object.values(data); }
@@ -359,7 +374,7 @@
         }
       }
 
-      // ====== Dropdown manual ======
+      // Dropdown manual
       function attachDropdown(input, drop, items){
         let data=items||[];
         const show=(arr)=>{ if(!arr.length){ drop.style.display='none'; return; }
@@ -391,7 +406,7 @@
         }
       }
 
-      // ====== Resolver texto -> IATA ======
+      // Resolver texto -> IATA
       function resolveToIATA(text){
         const t=(text||'').trim();
         if(!t) return '';
@@ -406,7 +421,7 @@
         return found ? found.iata.toUpperCase() : '';
       }
 
-      // ====== Validação ======
+      // Validação
       function isTodayOrFuture(ymd){ const [y,m,d]=ymd.split('-').map(Number); const sel=new Date(y,m-1,d,0,0,0,0); const today=new Date(); today.setHours(0,0,0,0); return sel>=today; }
       function validate(origin,destination,date){
         if(!/^[A-Z]{3}$/.test(origin)) return { ok:false, msg:'Origem inválida. Use código IATA (3 letras).' };
@@ -416,7 +431,7 @@
         return { ok:true, msg:'' };
       }
 
-      // ====== Distância ======
+      // Distância
       const R_KM=6371; const toRad=d=>d*Math.PI/180;
       function haversineKm(a,b){
         if(a.lat==null||a.lon==null||b.lat==null||b.lon==null) return Infinity;
@@ -426,7 +441,7 @@
       }
       function getAirportByIATA(code){ const c=(code||'').toUpperCase(); return AIRPORTS.find(x=>x.iata===c)||null; }
 
-      // ====== URL LATAM ======
+      // URL LATAM
       const uuidv4=()=>window.crypto&&crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0,v=c==='x'?r:(r&0x3|0x8);return v.toString(16);});
       function buildLatamURL({ origin, destination, date }){
         const [y,m,d]=date.split('-').map(Number);
@@ -438,7 +453,7 @@
         return `${LATAM_BASE}?${qp.toString()}`;
       }
 
-      // ====== Destinos (chips) ======
+      // Destinos (chips)
       function addDestination(inputValue){
         const code=resolveToIATA(inputValue);
         if(!code){ $('#status').className='msg err'; $('#status').textContent='Não foi possível identificar o IATA a partir do texto informado.'; return {ok:false}; }
@@ -453,7 +468,7 @@
         box.querySelectorAll('.rm').forEach(btn=>btn.addEventListener('click',()=>removeDestination(btn.dataset.code)));
       }
 
-      // ====== Colar lista ======
+      // Colar lista
       function pasteListHandler(){
         const text=prompt('Cole IATAs e/ou nomes de aeroportos (separados por vírgula, ponto e vírgula, | ou quebra de linha).');
         if(!text) return;
@@ -470,7 +485,7 @@
         else { $('#status').className='msg ok'; $('#status').textContent=`Adicionados ${added} destino(s).`; }
       }
 
-      // ====== País (até N) ======
+      // País (limite)
       function addSelectedCountryAirports(){
         const box=$('#countryAirports');
         const max=getSelectCap();
@@ -491,13 +506,33 @@
         }
       }
 
-      // ====== Proximidade ======
+      // --- Proximidade (lista + fallback iOS) ---
       function renderNearList(list){
-        const box=$('#nearList');
-        box.innerHTML=list.map(item=>{
-          const label=`${item.iata} — ${item.city||''}${item.city&&item.name?' • ':''}${item.name||''} (${item.dist.toFixed(0)} km)${item.intl?' 🌐':''}`;
-          return `<option value="${item.iata}">${label}</option>`;
-        }).join('');
+        const boxSel=$('#nearList');
+        const boxAlt=$('#nearListAlt');
+        const alt=useAltMulti();
+
+        if(!alt){
+          // modo select
+          boxAlt.hidden = true;
+          boxSel.style.display = '';
+          boxSel.innerHTML=list.map(item=>{
+            const label=`${item.iata} — ${item.city||''}${item.city&&item.name?' • ':''}${item.name||''} (${item.dist.toFixed(0)} km)${item.intl?' 🌐':''}`;
+            return `<option value="${item.iata}">${label}</option>`;
+          }).join('');
+        } else {
+          // modo checkboxes (iOS)
+          boxSel.style.display = 'none';
+          boxAlt.hidden = false;
+          boxAlt.innerHTML = list.map(item=>{
+            const label=`${item.iata} — ${item.city||''}${item.city&&item.name?' • ':''}${item.name||''} <span class="muted">(${item.dist.toFixed(0)} km)</span>${item.intl?' 🌐':''}`;
+            return `<label class="vopt"><input type="checkbox" value="${item.iata}" /> <span>${label}</span></label>`;
+          }).join('');
+          // enforce imediato ao marcar
+          boxAlt.addEventListener('change', function(e){
+            if(e.target && e.target.matches('input[type="checkbox"]')) enforceNearSelectLimitAlt(e.target);
+          }, { once:false });
+        }
       }
       function findNearby(){
         const baseText=$('#nearBase').value;
@@ -508,7 +543,7 @@
         if(baseApt.lat==null||baseApt.lon==null){ $('#status').className='msg err'; $('#status').textContent='Proximidade requer a lista global (CDN) com coordenadas. Tente novamente após carregar.'; return; }
 
         const radius=parseInt($('#nearRadiusRange').value,10);
-        const maxN=Math.max(1, Math.min(200, parseInt($('#nearMax').value,10)||25)); // <-- AGORA SEMPRE APLICA
+        const maxN=Math.max(1, Math.min(200, parseInt($('#nearMax').value,10)||25));
         const sameCC=$('#nearSameCountry').checked;
         const intlOnly=$('#nearIntl').checked;
 
@@ -519,14 +554,17 @@
 
         let picked;
         if(!radius || radius<=0){ picked=withDist.slice(0,maxN); }
-        else { picked=withDist.filter(x=>x.dist<=radius).slice(0,maxN); } // <-- CAP TAMBÉM COM RAIO
+        else { picked=withDist.filter(x=>x.dist<=radius).slice(0,maxN); }
 
         renderNearList(picked);
         if(picked.length===0){ $('#status').className='msg warn'; $('#status').textContent='Nenhum aeroporto encontrado com os filtros. Ajuste o raio/país/internacionais.'; }
         else { $('#status').className='msg ok'; $('#status').textContent=`Encontrados ${picked.length} aeroporto(s) próximos de ${baseApt.iata}.`; }
+
+        // rolar até a lista em telas pequenas
+        document.getElementById('nearListWrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
       function enforceNearSelectLimit(){
-        if (limitUnlocked) return;
+        if (limitUnlocked || useAltMulti()) return;
         const box = $('#nearList');
         const sel = Array.from(box.selectedOptions);
         if (sel.length > 10){
@@ -535,17 +573,42 @@
           $('#status').className='msg err'; $('#status').textContent='Limite de 10 aeroportos por seleção atingido.';
         }
       }
+      function enforceNearSelectLimitAlt(lastChanged){
+        if (limitUnlocked) return;
+        const cont = $('#nearListAlt');
+        const checks = Array.from(cont.querySelectorAll('input[type="checkbox"]'));
+        const marked = checks.filter(c=>c.checked);
+        if (marked.length > 10){
+          if (lastChanged) lastChanged.checked = false;
+          else marked[marked.length-1].checked = false;
+          $('#status').className='msg err'; $('#status').textContent='Limite de 10 aeroportos por seleção atingido (iOS).';
+        }
+      }
+      function getNearSelected(){
+        if(!useAltMulti()){
+          return Array.from($('#nearList').selectedOptions).map(o=>o.value.toUpperCase());
+        } else {
+          return Array.from($('#nearListAlt').querySelectorAll('input[type="checkbox"]:checked')).map(c=>c.value.toUpperCase());
+        }
+      }
+      function clearNearSelection(){
+        if(!useAltMulti()){
+          Array.from($('#nearList').options).forEach(o=>o.selected=false);
+        } else {
+          Array.from($('#nearListAlt').querySelectorAll('input[type="checkbox"]')).forEach(c=>c.checked=false);
+        }
+      }
       function addNearSelected(){
-        const box=$('#nearList');
         const max=getSelectCap();
-        const selected=Array.from(box.selectedOptions).slice(0,max).map(o=>o.value.toUpperCase());
+        let selected=getNearSelected();
         if(selected.length===0){ $('#status').className='msg err'; $('#status').textContent='Selecione aeroportos na lista de proximidade.'; return; }
+        selected = selected.slice(0, max);
         selected.forEach(code=>dests.add(code));
         renderDestChips(); updateGoState();
         $('#status').className='msg ok'; $('#status').textContent=`Adicionados ${selected.length} aeroporto(s) por proximidade.`;
       }
 
-      // ==== Desktop: abre todas as abas direto ====
+      // Desktop: agendamento direto
       function preopenShellTabsDesktop(urls, cooldownSec, targets){
         return urls.map((u,idx)=>{
           const delaySec=Math.max(0, Math.ceil((targets[idx]-Date.now())/1000));
@@ -568,7 +631,7 @@
         });
       }
 
-      // ==== Mobile/Safari: lançador ====
+      // Mobile/Safari: lançador com botões
       function openViaLauncherSafari(urls, targets, cooldownSec){
         const launcher=window.open('', '_blank'); if(!launcher) return [];
         const urlsJSON=JSON.stringify(urls); const tgtsJSON=JSON.stringify(targets);
@@ -644,7 +707,6 @@ small{color:#666;display:block;margin-top:8px}
       function canSearch(){ const dateOk=!!$('#date').value; const hasChips=dests.size>0; const textIata=resolveToIATA($('#destination').value); return dateOk && (hasChips || !!textIata); }
       function updateGoState(){ $('#go').disabled=!canSearch(); }
 
-      // ====== Chips “internacionais” ======
       function updateIntlChips(){
         const chipCountry=$('#chipCountryIntl');
         const chipNear=$('#chipNearIntl');
@@ -652,7 +714,7 @@ small{color:#666;display:block;margin-top:8px}
         if(chipNear) chipNear.hidden=!$('#nearIntl').checked;
       }
 
-      // ====== Bind ======
+      // Bind
       function bind(){
         setMinDateToday();
         $('#interval').value=String(COOLDOWN_DEFAULT);
@@ -674,9 +736,9 @@ small{color:#666;display:block;margin-top:8px}
 
         // Proximidade
         $('#nearFind').addEventListener('click', findNearby);
-        $('#nearList').addEventListener('change', enforceNearSelectLimit); // <-- FECHA O LIMITE NA SELEÇÃO
+        $('#nearList').addEventListener('change', enforceNearSelectLimit);
         $('#addNear').addEventListener('click', addNearSelected);
-        $('#clearNearSel').addEventListener('click', ()=>{ Array.from($('#nearList').options).forEach(o=>o.selected=false); });
+        $('#clearNearSel').addEventListener('click', clearNearSelection);
         $('#nearBase').addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); findNearby(); } });
         $('#nearIntl').addEventListener('change', ()=>{ updateIntlChips(); });
         const r=$('#nearRadiusRange'), rv=$('#nearRadiusVal'); const upd=()=>{ rv.textContent=String(r.value); }; r.addEventListener('input', upd); upd();
@@ -733,7 +795,7 @@ small{color:#666;display:block;margin-top:8px}
           $('#countryFilter').value='';
           renderCountryAirports($('#countrySelect').value,'',$('#countryIntl').checked);
           Array.from($('#countryAirports').options).forEach(o=>o.selected=false);
-          $('#nearBase').value=''; $('#nearList').innerHTML='';
+          $('#nearBase').value=''; $('#nearList').innerHTML=''; $('#nearListAlt').innerHTML='';
           updateIntlChips(); updateGoState();
           const rr=$('#nearRadiusRange'); rr.value=200; $('#nearRadiusVal').textContent='200'; $('#nearMax').value=25; $('#nearSameCountry').checked=true; $('#nearIntl').checked=false;
         });
@@ -741,11 +803,18 @@ small{color:#666;display:block;margin-top:8px}
         updateGoState();
         updateIntlChips();
         updateLimitUI();
+
+        // Ativa fallback visual para iOS já no load
+        if(useAltMulti()){
+          document.getElementById('nearList').style.display='none';
+          document.getElementById('nearListAlt').hidden=false;
+        }
+
         runSelfTests();
       }
       document.addEventListener('DOMContentLoaded', bind);
 
-      // ====== TESTES ======
+      // Testes
       function tassert(name, cond){ const div=document.createElement('div'); div.className='test-item '+(cond?'test-pass':'test-fail'); div.textContent=(cond?'✔ ':'✘ ')+name; document.getElementById('testReport').appendChild(div); }
       function runSelfTests(){
         const panel=document.getElementById('testPanel'); if(panel) panel.open=false;
@@ -760,8 +829,7 @@ small{color:#666;display:block;margin-top:8px}
           tassert('outbound=2025-10-11T15:00:00.000Z', sp.get('outbound')==='2025-10-11T15:00:00.000Z');
         }catch(e){ tassert('Parsing URL exemplo', false); }
         (function(){ const gru={lat:-23.43,lon:-46.47}, cgh={lat:-23.63,lon:-46.66}; const d=haversineKm(gru,cgh); tassert('haversine numérico', isFinite(d)&&d>10&&d<40); })();
-        // nearMax aplicado em ambos os casos
-        tassert('nearMax existe', !!document.getElementById('nearMax'));
+        tassert('Fallback iOS ativo?', (function(){ var iOS=/iP(hone|ad|od)/i.test(navigator.userAgent); var alt=document.getElementById('nearListAlt'); return !iOS || (iOS && alt.hidden===false); })());
       }
     }
   </script>
