@@ -116,7 +116,7 @@
         <div>
           <label for="date">Data</label>
           <input id="date" type="date" />
-          <small class="hint">A data mínima é hoje. O horário será <code>15:00:00Z</code>.</small>
+          <small class="hint">A data mínima é hoje. O horário será <code>03:00:00Z</code>.</small>
         </div>
 
         <div>
@@ -249,8 +249,11 @@
       const COOLDOWN_DEFAULT = 15;
       const FIRST_DELAY_MOBILE_SECONDS = 3;
       const LATAM_BASE = 'https://www.latamairlines.com/br/pt/oferta-voos';
-      const USE_EXP_ID = true;
-      const FORCE_WEB_PARAM = { channel: 'web' };
+
+      // Agora deixamos a URL o mais parecida possível com a da LATAM:
+      const USE_EXP_ID = false;               // não envia exp_id
+      const FORCE_WEB_PARAM = {};            // não adiciona channel=web
+      const LATAM_OUTBOUND_HOUR_Z = 3;       // gera 03:00:00.000Z
 
       const ISO_TO_PT = { BR:'Brasil', AR:'Argentina', CL:'Chile', UY:'Uruguai', PY:'Paraguai', BO:'Bolívia', PE:'Peru', CO:'Colômbia', EC:'Equador', VE:'Venezuela', US:'Estados Unidos', CA:'Canadá', MX:'México', PT:'Portugal', ES:'Espanha', FR:'França', GB:'Reino Unido', DE:'Alemanha', IT:'Itália', NL:'Países Baixos', AU:'Austrália', NZ:'Nova Zelândia', ZA:'África do Sul', JP:'Japão', CN:'China', AE:'Emirados Árabes Unidos', QA:'Catar', TR:'Turquia' };
       const NAME_TO_ISO = { 'BRAZIL':'BR','BRASIL':'BR','ARGENTINA':'AR','CHILE':'CL','URUGUAY':'UY','URUGUAI':'UY','PARAGUAY':'PY','PARAGUAI':'PY','BOLIVIA':'BO','PERU':'PE','COLOMBIA':'CO','ECUADOR':'EC','EQUADOR':'EC','VENEZUELA':'VE','UNITED STATES':'US','ESTADOS UNIDOS':'US','CANADA':'CA','CANADÁ':'CA','MEXICO':'MX','MÉXICO':'MX','PORTUGAL':'PT','SPAIN':'ES','ESPANHA':'ES','FRANCE':'FR','FRANÇA':'FR','UNITED KINGDOM':'GB','REINO UNIDO':'GB','GERMANY':'DE','ALEMANHA':'DE','ITALY':'IT','ITÁLIA':'IT','NETHERLANDS':'NL','PAÍSES BAIXOS':'NL','AUSTRALIA':'AU','NEW ZEALAND':'NZ','SOUTH AFRICA':'ZA','ÁFRICA DO SUL':'ZA','JAPAN':'JP','JAPÃO':'JP','CHINA':'CN','UNITED ARAB EMIRATES':'AE','EMIRADOS ÁRABES UNIDOS':'AE','QATAR':'QA','CATAR':'QA','TURKEY':'TR','TURQUIA':'TR' };
@@ -445,10 +448,27 @@
       const uuidv4=()=>window.crypto&&crypto.randomUUID?crypto.randomUUID():'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0,v=c==='x'?r:(r&0x3|0x8);return v.toString(16);});
       function buildLatamURL({ origin, destination, date }){
         const [y,m,d]=date.split('-').map(Number);
-        const outboundISO=new Date(Date.UTC(y,m-1,d,15,0,0)).toISOString();
-        const params={ origin:origin.toUpperCase(), outbound:outboundISO, destination:destination.toUpperCase(), adt:'1', chd:'0', inf:'0', trip:'OW', cabin:'Economy', redemption:'true', sort:'RECOMMENDED' };
+
+        // Gera outbound em 03:00:00.000Z
+        const outboundISO=new Date(Date.UTC(y, m-1, d, LATAM_OUTBOUND_HOUR_Z, 0, 0)).toISOString();
+
+        const params={
+          origin:origin.toUpperCase(),
+          outbound:outboundISO,
+          destination:destination.toUpperCase(),
+          inbound:'undefined',  // para reproduzir exatamente &inbound=undefined
+          adt:'1',
+          chd:'0',
+          inf:'0',
+          trip:'OW',
+          cabin:'Economy',
+          redemption:'true',
+          sort:'RECOMMENDED'
+        };
+
         if(USE_EXP_ID) params.exp_id=uuidv4();
         Object.entries(FORCE_WEB_PARAM).forEach(([k,v])=>params[k]=v);
+
         const qp=new URLSearchParams(params);
         return `${LATAM_BASE}?${qp.toString()}`;
       }
@@ -822,11 +842,13 @@ small{color:#666;display:block;margin-top:8px}
         tassert('Botão Buscar inicia desabilitado', document.getElementById('go').disabled===true);
         tassert('buildLatamURL fn', typeof buildLatamURL==='function');
         const sample=buildLatamURL({ origin:'BSB', destination:'SCL', date:'2025-10-11' });
-        try{ const [base,qs]=sample.split('?'); const sp=new URLSearchParams(qs);
+        try{
+          const [base,qs]=sample.split('?'); const sp=new URLSearchParams(qs);
           tassert('Base correta', base===LATAM_BASE);
           tassert('origin=BSB', sp.get('origin')==='BSB');
           tassert('destination=SCL', sp.get('destination')==='SCL');
-          tassert('outbound=2025-10-11T15:00:00.000Z', sp.get('outbound')==='2025-10-11T15:00:00.000Z');
+          tassert('outbound=2025-10-11T03:00:00.000Z', sp.get('outbound')==='2025-10-11T03:00:00.000Z');
+          tassert('inbound=undefined', sp.get('inbound')==='undefined');
         }catch(e){ tassert('Parsing URL exemplo', false); }
         (function(){ const gru={lat:-23.43,lon:-46.47}, cgh={lat:-23.63,lon:-46.66}; const d=haversineKm(gru,cgh); tassert('haversine numérico', isFinite(d)&&d>10&&d<40); })();
         tassert('Fallback iOS ativo?', (function(){ var iOS=/iP(hone|ad|od)/i.test(navigator.userAgent); var alt=document.getElementById('nearListAlt'); return !iOS || (iOS && alt.hidden===false); })());
